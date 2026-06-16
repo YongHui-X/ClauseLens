@@ -4,26 +4,34 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
 import streamlit as st
 
-from app.cuad import STARTER_CLAUSE_TYPES
-from app.rag import (
-    COLLECTION,
-    EMBEDDING_MODEL,
-    QDRANT_PATH,
-    create_qdrant_client,
-    load_embedding_model,
-    search_clause_evidence,
-    serialize_search_result,
-)
-
+API_BASE_URL = "http://127.0.0.1:8000"
 EVAL_RESULTS_PATH = Path("data/processed/eval_results.json")
 
 
-@st.cache_resource(show_spinner="Loading embedding model and Qdrant client...")
-def load_retriever(qdrant_path: str, model_name: str):
-    return create_qdrant_client(path=Path(qdrant_path)), load_embedding_model(model_name)
+def api_get_json(api_base_url: str, path: str) -> dict[str, object]:
+    with urlopen(f"{api_base_url.rstrip('/')}{path}", timeout=30) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+def api_post_json(
+    api_base_url: str,
+    path: str,
+    payload: dict[str, object],
+) -> dict[str, object]:
+    body = json.dumps(payload).encode("utf-8")
+    request = Request(
+        f"{api_base_url.rstrip('/')}{path}",
+        data=body,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urlopen(request, timeout=120) as response:
+        return json.loads(response.read().decode("utf-8"))
 
 
 def load_saved_eval(path: Path) -> list[dict[str, object]]:
@@ -60,11 +68,20 @@ def main() -> None:
 
     with st.sidebar:
         st.header("Search controls")
-        clause_options = ["All clause types", *STARTER_CLAUSE_TYPES]
+        api_base_url = st.text_input("API URL", value=API_BASE_URL)
+        try:
+            clause_type_response = api_get_json(api_base_url, "/clause-types")
+            clause_types = [
+                str(item)
+                for item in clause_type_response.get("clause_types", [])
+            ]
+        except (HTTPError, URLError, TimeoutError, ValueError) as exc:
+            st.error(f"API is not reachable: {exc}")
+            st.stop()
+
+        clause_options = ["All clause types", *clause_types]
         selected_clause_type = st.selectbox("Clause type", clause_options)
         limit = st.slider("Top results", min_value=1, max_value=20, value=5)
-        qdrant_path = st.text_input("Qdrant path", value=str(QDRANT_PATH))
-        model_name = st.text_input("Embedding model", value=EMBEDDING_MODEL)
         render_eval_panel()
 
     query = st.text_input(
@@ -86,19 +103,20 @@ def main() -> None:
     )
 
     try:
-        client, model = load_retriever(qdrant_path, model_name)
-        results = search_clause_evidence(
-            client=client,
-            model=model,
-            query=query,
-            clause_type=clause_type,
-            limit=limit,
-            collection_name=COLLECTION,
+        response = api_post_json(
+            api_base_url,
+            "/search",
+            {
+                "query": query,
+                "clause_type": clause_type,
+                "limit": limit,
+            },
         )
-    except Exception as exc:
+        results = list(response.get("results", []))
+    except (HTTPError, URLError, TimeoutError, ValueError) as exc:
         st.error(
-            "Search failed. Confirm the starter data has been indexed into "
-            f"`{qdrant_path}`. Details: {exc}"
+            "Search failed. Confirm the API is running and the starter data is "
+            f"indexed. Details: {exc}"
         )
         return
 
@@ -107,8 +125,7 @@ def main() -> None:
         st.warning("No clause evidence matched this query.")
         return
 
-    for index, result in enumerate(results, start=1):
-        item = serialize_search_result(result)
+    for index, item in enumerate(results, start=1):
         with st.container(border=True):
             left, right = st.columns([0.72, 0.28])
             left.markdown(

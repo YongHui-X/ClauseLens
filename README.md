@@ -54,6 +54,8 @@ Run the Streamlit demo:
 .\.conda-clauselens\python.exe -m streamlit run app\streamlit_app.py
 ```
 
+Keep the API running while using Streamlit. The UI sends search requests to `http://127.0.0.1:8000` so Qdrant is opened by only one backend process.
+
 Run retrieval evaluation:
 
 ```powershell
