@@ -54,6 +54,18 @@ def build_test_client() -> tuple[TestClient, FakeClient]:
     return TestClient(app), fake_client
 
 
+def test_root_describes_available_api_routes() -> None:
+    client, _ = build_test_client()
+
+    response = client.get("/")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["name"] == "ClauseLens API"
+    assert body["docs"] == "/docs"
+    assert body["search"]["path"] == "/search"
+
+
 def test_health_reports_collection_status() -> None:
     client, _ = build_test_client()
 

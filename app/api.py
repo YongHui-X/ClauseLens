@@ -103,6 +103,25 @@ def create_app(
 
     search_engine_dependency = Depends(get_search_engine)
 
+    @app.get("/")
+    def root() -> dict[str, object]:
+        return {
+            "name": "ClauseLens API",
+            "purpose": "Search CUAD contract clause evidence with citations.",
+            "docs": "/docs",
+            "health": "/health",
+            "clause_types": "/clause-types",
+            "search": {
+                "method": "POST",
+                "path": "/search",
+                "example": {
+                    "query": "Does the contract restrict assignment?",
+                    "clause_type": "Anti-Assignment",
+                    "limit": 5,
+                },
+            },
+        }
+
     @app.get("/health")
     def health(engine: SearchEngine = search_engine_dependency) -> dict[str, object]:
         collection_ready = False
