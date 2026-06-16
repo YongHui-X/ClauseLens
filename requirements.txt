@@ -1,0 +1,13 @@
+qdrant-client
+sentence-transformers
+pandas
+pydantic
+python-dotenv
+tqdm
+rich
+fastapi
+uvicorn[standard]
+streamlit
+pytest
+ruff
+

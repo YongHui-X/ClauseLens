@@ -1,0 +1,17 @@
+.venv/
+.venv311/
+.conda-clauselens/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.env
+
+api*.log
+streamlit*.log
+
+data/cuad/
+data/qdrant_storage/
+data/qdrant_local/
+data/processed/
+*.log
