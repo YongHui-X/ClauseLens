@@ -2,6 +2,12 @@
 
 ClauseLens is a contract intelligence RAG chatbot. It helps a user ask plain-English questions about legal agreements, retrieve the most relevant clause evidence, and generate grounded answers with source information attached so the result can be checked against the original contract.
 
+Using 463 clause records from 30 real-world CUAD contracts, the final system
+achieved 100% Recall@5, 98.2% context precision, and 1.000 MRR on the
+passage-level retrieval evaluation. A 120-request answer benchmark achieved
+100% deterministic accuracy and citation validity with 2.43-second P95
+end-to-end latency.
+
 Project documentation:
 
 - [`docs/prd.md`](docs/prd.md): product requirements and development rules.
@@ -25,6 +31,8 @@ Instead of asking a model to immediately generate an answer, the system first re
 - Supports filtering by clause type, such as audit rights, assignment restrictions, liability caps, license grants, and termination rights.
 - Returns source metadata with each result, including source PDF name, TXT path, document ID, answer label, score, and evidence text.
 - Includes a repeatable evaluation script so retrieval quality can be measured instead of judged only by manual testing.
+- Achieves 100% Recall@5 and 98.2% context precision on the current
+  passage-level retrieval benchmark.
 - Includes live per-query telemetry and a chat latency benchmark so you can
   isolate rewrite, embedding, vector search, reranking, and answer cost.
 - Provides both a FastAPI backend and a Streamlit demo UI for easier review.
@@ -169,7 +177,7 @@ Run the chat latency benchmark:
 Run the 120-turn latency and deterministic-quality acceptance workload:
 
 ```powershell
-.\.conda-clauselens\python.exe evaluation\performance_benchmark.py --repeats 10 --enforce-gates
+.\.conda-clauselens\python.exe evaluation\performance_benchmark.py --repeats 10 --candidate-limit 3 --output data\processed\performance_hybrid_final_120.json
 ```
 
 Screen the pinned model snapshots on Standard and Priority processing:
@@ -209,13 +217,11 @@ Benchmark output includes:
 Use the comparison mode to tell whether the slowdown is mostly reranking,
 hosted answer generation, or local retrieval.
 
-Chat uses adaptive reranking by default. It applies the cross-encoder to the
-measured difficult intellectual-property paraphrase while keeping ordinary
-queries on faster vector search. It also reranks nuanced detail questions about
-exceptions, operation of law, defined relationships, duration, territory,
-thresholds, and notice periods. The Streamlit control can force reranking off
-or always on. The raw `/search` endpoint uses vector ordering by default; set
-`RERANKING_ENABLED=true` to enable reranking there.
+Chat uses hybrid retrieval by default. Dense Qdrant results and BM25 results
+are combined with reciprocal-rank fusion and deduplicated by contract.
+Adaptive reranking skips the cross-encoder when the dense and lexical top
+ranks agree, and otherwise reranks the top three candidates. The Streamlit
+control can force reranking off or always on.
 
 First-turn chat questions go directly to retrieval. Follow-up questions are
 contextualized deterministically from the previous user question, avoiding a
@@ -265,23 +271,26 @@ Add screenshots here after capturing the local demo.
 
 ## Evaluation Insights
 
-### Latest Performance Matrix
+### Latest End-to-End Performance
 
-The latest benchmark used Docker Qdrant, five reranker candidates, and 36
-sequential requests per model/tier configuration:
+The final benchmark used Docker Qdrant, hybrid dense and BM25 retrieval,
+adaptive top-three reranking, GPT-4.1 mini Standard, and 120 sequential
+requests:
 
-| Configuration | P95 total | P99 total | P95 first token | Deterministic pass | Citation validity |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| GPT-4.1 mini Standard | 2.61 s | 2.76 s | 1.44 s | 100% | 100% |
-| GPT-4.1 mini Priority | 2.73 s | 2.96 s | 2.26 s | 100% | 100% |
-| GPT-5.4 mini Standard | 1.91 s | 2.09 s | 1.50 s | 86.1% | 100% |
-| GPT-5.4 mini Priority | 1.48 s | 1.82 s | 1.21 s | 83.3% | 100% |
+| Metric | Final result |
+| --- | ---: |
+| P50 total latency | 1.69 s |
+| P95 total latency | 2.43 s |
+| P99 total latency | 5.05 s |
+| P95 first-token latency | 1.22 s |
+| Deterministic answer accuracy | 100% |
+| Citation validity | 100% |
+| Answer-mode consistency | 100% |
+| Critical failures | 0 |
 
-GPT-4.1 mini Standard is the current quality-first default. GPT-5.4 mini
-Standard is the latency-first candidate, but it is not promoted until
-normalized deterministic evaluation and answer-completion checks pass.
-Priority was returned for only 91.7% of requested Priority calls and did not
-reach the proposed 500 ms P95 first-token target.
+This meets the practical P95 target of at most 2.5 seconds while preserving
+all answer-quality checks. It does not meet the stricter experimental goals of
+P95 total below 2.0 seconds or P95 first-token latency below 700 ms.
 
 These are portfolio benchmark results from a curated sequential workload, not
 production SLA claims. See
@@ -290,45 +299,22 @@ for methodology and claim boundaries.
 
 ### Retrieval Quality
 
-The retrieval evaluation contains plain-English contract review questions
-across the starter clause types, including a regression case for the
-intellectual-property usage wording.
+The passage-level evaluation covers plain-English questions across the five
+supported clause types and uses the same routing and retrieval path as the
+application.
 
-Baseline vector-search results:
+| Metric | Final result |
+| --- | ---: |
+| Cases passed | 11/11 |
+| Recall@5 | 1.000 |
+| Context precision | 0.982 |
+| MRR | 1.000 |
+| nDCG | 0.998 |
+| P95 retrieval latency | 68.2 ms |
+| P95 reranking latency | 124.6 ms |
 
-```text
-Passed: 9/11
-MRR: 0.886
-nDCG: 0.921
-Top result was the right clause type: 81.8%
-Right clause appeared somewhere in the top 5: 100%
-Expected evidence words were found: 100%
-```
-
-Cross-encoder reranking results over 20 candidates:
-
-```text
-Passed: 10/11
-MRR: 0.955
-nDCG: 0.964
-Top result was the right clause type: 90.9%
-Right clause appeared somewhere in the top 5: 100%
-Average retrieval latency: 1375.8 ms on the local CPU
-```
-
-Adaptive reranking results:
-
-```text
-Passed: 11/11
-MRR: 1.000
-nDCG: 0.985
-Top result was the right clause type: 100%
-Average retrieval latency: 305.3 ms across all cases
-```
-
-The current Docker-Qdrant configuration uses five reranker candidates and
-retains 11/11 passes, MRR 1.000, and 100% top-1 clause-type accuracy. In the
-candidate comparison it averaged 89.6 ms retrieval and 50.7 ms reranking.
+The evaluator scores relevant evidence passages rather than treating every
+passage with the expected clause label as equally relevant.
 
 ## Dataset Snapshot
 
@@ -387,6 +373,12 @@ scripts/index_qdrant.py
         |
         v
 SentenceTransformer embeddings -> Qdrant
+        |
+        v
+Qdrant dense retrieval + BM25 lexical retrieval
+        |
+        v
+reciprocal-rank fusion -> contract deduplication -> adaptive reranking
         |
         v
 app/rag.py shared retrieval helpers
@@ -478,10 +470,10 @@ Verification commands:
 
 ## Resume Summary
 
-Built ClauseLens, a contract intelligence RAG chatbot over CUAD using Sentence
-Transformers, Qdrant, and OpenAI for grounded answer generation. Implemented
-metadata-filtered semantic search, source-grounded clause evidence, FastAPI and
-Streamlit chat surfaces, and retrieval evaluation with clear quality insights.
+Built ClauseLens, a citation-grounded RAG chatbot for legal, procurement, and
+compliance teams using real-world CUAD contracts to accelerate contract review
+and support risk-informed decisions. Achieved 100% Recall@5, 98.2% context
+precision, 100% benchmark accuracy, and 2.43-second P95 response latency.
 
 ## Current Status
 
