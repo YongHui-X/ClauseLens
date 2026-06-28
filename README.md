@@ -1,7 +1,5 @@
 # QFind
 
-[![CI](https://github.com/YongHui-X/ClauseLens/actions/workflows/ci.yml/badge.svg)](https://github.com/YongHui-X/ClauseLens/actions/workflows/ci.yml)
-
 **A RAG chatbot for asking contract questions and checking the source evidence.**
 
 QFind helps legal, procurement, and compliance reviewers ask plain-English
