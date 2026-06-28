@@ -1,14 +1,79 @@
 # QFind
 
-> A citation-grounded RAG chatbot that helps legal, procurement, and compliance
-> teams find contract risks, rights, and obligations faster.
+**A RAG chatbot for asking contract questions and checking the source evidence.**
 
-QFind answers plain-English questions using evidence retrieved from
-real-world contracts in the CUAD dataset. Every generated answer includes
-source-backed citations so users can verify the result against the retrieved
-contract language.
+QFind helps legal, procurement, and compliance reviewers ask plain-English
+questions about contracts and quickly see the clauses that support the answer.
+Instead of making users manually scan long agreements, this RAG chatbot retrieves
+relevant contract language, writes a concise answer, and shows the cited evidence
+used to produce it.
 
-This is a portfolio project and not a legal advice tool.
+The evaluated version of this RAG chatbot was tested on 463 clause evidence
+records from 30 CUAD contracts. It reached 100% Recall@5, 98.2% context
+precision, 1.000 MRR, 100% deterministic answer accuracy, and 100% citation
+validity on the final benchmark.
+
+This is a portfolio research prototype. It is not a legal advice tool.
+
+## At a Glance
+
+| Question | Answer |
+| --- | --- |
+| What is it? | A RAG chatbot for contract review. |
+| Who is it for? | Legal, procurement, and compliance teams reviewing commercial agreements. |
+| What does it help with? | Finding contract risks, rights, and obligations faster. |
+| How does it build trust? | Every answer is tied to retrieved contract evidence and numbered citations. |
+| What can it answer today? | Questions about assignment, liability caps, license grants, audit rights, and termination for convenience. |
+| What happens outside that scope? | The chatbot refuses unsupported topics instead of guessing. |
+| How is it delivered? | A browser chat interface backed by FastAPI, Qdrant, and OpenAI. |
+
+## Product Demo
+
+### Video Walkthrough
+
+<video src="docs/Media/QFind%20demo.mp4" controls width="900">
+  Your browser does not support embedded video. Open the demo here:
+  docs/Media/QFind%20demo.mp4
+</video>
+
+[Open the QFind demo video](docs/Media/QFind%20demo.mp4)
+
+### Cited Evidence
+
+Answers include numbered citations and expandable retrieved passages, so a
+reviewer can verify claims against the source contract language.
+
+<img src="docs/Media/Evidence.png" alt="QFind cited evidence panel" width="900">
+
+### Conflicting Sublicensing Rights
+
+When retrieved contracts differ, QFind qualifies the answer instead of
+overstating a single global rule. Follow-up questions remain anchored to the
+conversation context.
+
+<img src="docs/Media/sublicensing.png" alt="QFind sublicensing answer with follow-up context" width="900">
+
+### Unsupported Topic Guardrail
+
+Questions outside the evaluated clause categories are rejected safely rather
+than answered from unrelated evidence.
+
+<img src="docs/Media/unsupported%20topics.png" alt="QFind unsupported topic response" width="900">
+
+## Contents
+
+- [Verified Results](#verified-results)
+- [Why It Matters](#why-it-matters)
+- [Core Capabilities](#core-capabilities)
+- [Demo Protections](#demo-protections)
+- [How It Works](#how-it-works)
+- [Technology Stack](#technology-stack)
+- [Supported Contract Topics](#supported-contract-topics)
+- [Quick Start](#quick-start)
+- [Application Surfaces](#application-surfaces)
+- [Evaluation](#evaluation)
+- [Deployment](#public-deployment)
+- [Project Structure](#project-structure)
 
 ## Verified Results
 
@@ -71,7 +136,7 @@ average comes from the final 120-request benchmark. These are estimated
 generation costs rather than an exported billing total and exclude hosting or
 infrastructure charges.
 
-## Business Value
+## Why It Matters
 
 - Helps legal, procurement, and compliance teams locate important contract
   language without manually scanning entire agreements.
@@ -171,9 +236,9 @@ Returned evidence: top 3 passages in the React chat UI
 | Reranker | cross-encoder/ms-marco-MiniLM-L-6-v2 |
 | Answer model | OpenAI GPT-4.1 mini |
 | API and web service | FastAPI |
-| Primary interface | React/Vite served by FastAPI |
+| Primary interface | React 19, TypeScript, and Vite served by FastAPI |
 | Optional local interface | Streamlit |
-| Public deployment | Cloud Run, Qdrant Cloud, and React |
+| Public deployment | Cloud Run, Qdrant Cloud, and the built React app |
 | Persistence | SQLite and JSONL telemetry |
 | Testing | pytest |
 
@@ -198,12 +263,12 @@ The current evaluated subset contains:
 | --- | ---: | ---: | ---: |
 | Contracts | 30 | 510 | 5.9% |
 | Supported clause categories | 5 | 41 | 12.2% |
-| Clause evidence records | 463 | Not directly comparable | — |
+| Clause evidence records | 463 | Not directly comparable | - |
 
 An indexed clause evidence record is one searchable clause passage with its
 source contract, category, citation metadata, and vector embedding. A contract
 can contribute multiple records, so the 463 records represent searchable
-passages from 30 contracts—not 463 of CUAD's 510 contracts.
+passages from 30 contracts, not 463 of CUAD's 510 contracts.
 
 | Clause category | Records |
 | --- | ---: |
@@ -593,7 +658,7 @@ The current suite covers:
 - [Latest performance report](docs/performance_results_2026-06-22.md)
 - [Evaluation questions](docs/questions.md)
 
-## Future plans
+## Future Plans
 
 - Expand coverage to 10 to 15 thoroughly evaluated clause categories.
 - Add full-contract chunking with character-level source spans.
