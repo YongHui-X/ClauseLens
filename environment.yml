@@ -1,4 +1,4 @@
-name: clauselens
+name: qfind
 channels:
   - defaults
 dependencies:

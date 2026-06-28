@@ -333,7 +333,7 @@ def serialize_result(result: AnswerEvalResult) -> dict[str, Any]:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Evaluate generated ClauseLens answers against grounded cases."
+        description="Evaluate generated QFind answers against grounded cases."
     )
     parser.add_argument("--tests", type=Path, default=DEFAULT_ANSWER_TEST_FILE)
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT_PATH)

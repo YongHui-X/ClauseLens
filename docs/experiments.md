@@ -1,36 +1,7 @@
-# ClauseLens Experiments
+# QFind Experiments
 
 This document records measured retrieval, answer-quality, and latency
 experiments. Stable architecture and terminology live in `docs/notes.md`.
-
-## 12. Permanent Cloudflare Deployment Port
-
-Goal: make the portfolio UI immediately available without a local Docker
-process, always-on VM, Streamlit hibernation screen, or Qdrant Cloud lifecycle.
-
-Implementation:
-
-- Added a React/Vite frontend and Cloudflare Worker streaming API.
-- Generated a static artifact from the exact 463 normalized vectors used by the
-  validated local Qdrant collection.
-- Ported clause routing, deterministic follow-up contextualization, BM25,
-  dense search, RRF fusion, contract deduplication, adaptive top-three
-  reranking, evidence compression, grounding rules, and citation payloads.
-- Kept the Python/Streamlit/Qdrant stack as the research and benchmark
-  reference.
-- Added Turnstile plus SQLite Durable Object limits: 3 requests/minute/IP,
-  10/day/IP, 100/day globally, 1 concurrent request/IP, and 5 globally.
-- Added artifact checksum tests and TypeScript retrieval, routing, and request
-  validation tests.
-
-Migration rule:
-
-- The cloud deployment cannot be promoted on structural tests alone. The
-  Workers AI embedding and reranker path must pass the existing 11 retrieval
-  cases and 120-request answer benchmark against a preview deployment.
-- The 120-request local baseline remains P50 1.69 s, P95 2.43 s, P99 5.05 s,
-  100% deterministic checks, 100% citation validity, and zero critical
-  failures.
 
 ## 1. Initial Cross-Encoder Reranking
 

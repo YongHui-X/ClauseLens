@@ -24,7 +24,7 @@ from app.cuad import (  # noqa: E402
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Prepare a clean CUAD starter subset for ClauseLens."
+        description="Prepare a clean CUAD starter subset for QFind."
     )
     parser.add_argument(
         "--max-contracts",

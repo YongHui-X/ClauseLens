@@ -1,4 +1,4 @@
-"""Load generated-answer quality cases for ClauseLens."""
+"""Load generated-answer quality cases for QFind."""
 
 from __future__ import annotations
 

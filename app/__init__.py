@@ -1,2 +1,2 @@
-"""ClauseLens application package."""
+"""QFind application package."""
 

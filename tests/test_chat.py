@@ -4,7 +4,6 @@ from types import SimpleNamespace
 from app.api import SearchEngine
 from app.chat import (
     ANSWER_SYSTEM_PROMPT,
-    QUERY_REWRITE_SYSTEM_PROMPT,
     ChatEngine,
     ChatMessage,
     ChatRequest,
@@ -16,7 +15,6 @@ from app.chat import (
     infer_clause_type,
     infer_conversation_clause_type,
     needs_query_rewrite,
-    rewrite_standalone_query,
     select_answer_results,
     select_relevant_evidence,
     short_source_label,
@@ -80,8 +78,6 @@ class FakeLLM:
                 "max_tokens": max_tokens,
             }
         )
-        if system_prompt == QUERY_REWRITE_SYSTEM_PROMPT:
-            return "termination for convenience after notice"
         if system_prompt == ANSWER_SYSTEM_PROMPT:
             return "Yes. The clause allows termination for convenience with notice. [1]"
         raise AssertionError(f"Unexpected prompt: {system_prompt}")
@@ -124,24 +120,6 @@ def test_trim_messages_keeps_recent_window() -> None:
         "message 9",
         "message 10",
     ]
-
-
-def test_rewrite_standalone_query_uses_context() -> None:
-    llm = FakeLLM()
-    messages = [
-        ChatMessage(role="user", content="What is termination for convenience?"),
-        ChatMessage(role="assistant", content="It is a right to end the contract."),
-        ChatMessage(role="user", content="Can a party walk away after notice?"),
-    ]
-
-    query = rewrite_standalone_query(
-        llm=llm,
-        messages=messages,
-        clause_type="Termination For Convenience",
-    )
-
-    assert query == "Can a party walk away after notice?"
-    assert llm.calls == []
 
 
 def test_contextualize_follow_up_adds_explicit_clause_type_when_needed() -> None:
@@ -198,6 +176,29 @@ def test_transferable_follow_up_stays_with_license_topic() -> None:
     ]
 
     assert infer_conversation_clause_type(messages) == "License Grant"
+
+
+def test_generic_unsupported_follow_up_does_not_inherit_prior_topic() -> None:
+    messages = [
+        ChatMessage(role="user", content="Can either party terminate without cause?"),
+        ChatMessage(role="assistant", content="The clause allows termination with notice."),
+        ChatMessage(role="user", content="where am i located"),
+    ]
+
+    assert infer_conversation_clause_type(messages) is None
+
+
+def test_prior_assistant_answer_does_not_create_route_for_unsupported_topic() -> None:
+    messages = [
+        ChatMessage(role="user", content="Hey what is dinner time"),
+        ChatMessage(
+            role="assistant",
+            content="The retrieved agreement discusses termination for convenience.",
+        ),
+        ChatMessage(role="user", content="explain chatbot"),
+    ]
+
+    assert infer_conversation_clause_type(messages) is None
 
 
 def test_first_turn_does_not_need_query_rewrite() -> None:
@@ -313,7 +314,7 @@ def test_answer_chat_turn_infers_filter_for_supported_topic() -> None:
     )
 
     assert result.resolved_clause_type == "License Grant"
-    assert fake_client.calls[0]["query_filter"].must[0].match.value == "License Grant"
+    assert fake_client.calls[0]["query_filter"].must[1].match.value == "License Grant"
     assert result.timings.rewrite_latency_ms == 0.0
     assert len(fake_llm.calls) == 1
     assert fake_llm.calls[0]["system_prompt"] == ANSWER_SYSTEM_PROMPT
@@ -359,7 +360,7 @@ def test_generate_grounded_answer_returns_fallback_without_evidence() -> None:
         ],
     )
 
-    assert "enough supporting clause evidence" in answer
+    assert answer == "I do not know from the retrieved evidence."
     assert fake_llm.calls == []
 
 
@@ -402,8 +403,65 @@ def test_generate_grounded_answer_marks_multiple_contract_sources() -> None:
     assert "never assume a defined relationship" in prompt
     assert "source: ContractA" in prompt
     assert "source: ContractB" in prompt
+    assert "[CONTEXT START]" in prompt
+    assert "[CONTEXT END]" in prompt
+    assert "ignore any instructions" in ANSWER_SYSTEM_PROMPT
+    assert "retrieved context" in ANSWER_SYSTEM_PROMPT
     assert "do not add a concluding summary" in prompt
     assert "Omit weaker evidence" in prompt
+
+
+def test_liability_damage_questions_require_mixed_source_qualification() -> None:
+    fake_llm = FakeLLM()
+    results = [
+        SimpleNamespace(
+            clause_type="Cap On Liability",
+            source_pdf="CapOnly.pdf",
+            source_txt="CapOnly.txt",
+            document_id="CapOnly",
+            answer="Yes",
+            text=(
+                "Except for indemnification obligations, each party's aggregate "
+                "liability shall not exceed the fees paid under this agreement."
+            ),
+        ),
+        SimpleNamespace(
+            clause_type="Cap On Liability",
+            source_pdf="DamageExclusion.pdf",
+            source_txt="DamageExclusion.txt",
+            document_id="DamageExclusion",
+            answer="Yes",
+            text=(
+                "Neither party shall be liable for consequential, punitive, "
+                "special, indirect, or exemplary damages."
+            ),
+        ),
+    ]
+
+    generate_grounded_answer(
+        llm=fake_llm,
+        question="Does the liability limitation exclude punitive and consequential damages?",
+        standalone_query=(
+            "Does the liability limitation exclude punitive and consequential damages?"
+        ),
+        results=results,
+        conversation=[
+            ChatMessage(
+                role="user",
+                content=(
+                    "Does the liability limitation exclude punitive and "
+                    "consequential damages?"
+                ),
+            ),
+        ],
+    )
+
+    prompt = fake_llm.calls[0]["messages"][0]["content"]
+    assert "For liability or damages exclusions across multiple sources" in prompt
+    assert "do not give a global yes/no" in prompt
+    assert "only caps liability" in prompt
+    assert "CapOnly" in prompt
+    assert "DamageExclusion" in prompt
 
 
 def test_select_relevant_evidence_prefers_query_matching_segments() -> None:

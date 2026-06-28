@@ -1,4 +1,4 @@
-"""Local query telemetry and feedback for the ClauseLens demo."""
+"""Local query telemetry and feedback for the QFind demo."""
 
 from __future__ import annotations
 

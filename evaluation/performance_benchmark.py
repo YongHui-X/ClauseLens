@@ -1,4 +1,4 @@
-"""Run repeatable ClauseLens latency and deterministic-quality acceptance tests."""
+"""Run repeatable QFind latency and deterministic-quality acceptance tests."""
 
 from __future__ import annotations
 
@@ -237,7 +237,7 @@ def run_configuration(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Run ClauseLens model/tier performance acceptance workloads."
+        description="Run QFind model/tier performance acceptance workloads."
     )
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
     parser.add_argument("--qdrant-url", default="http://localhost:6333")

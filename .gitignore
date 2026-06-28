@@ -16,8 +16,5 @@ data/qdrant_local/
 data/processed/
 *.log
 
-cloudflare/node_modules/
-cloudflare/dist/
-cloudflare/.dev.vars
-cloudflare/.wrangler-config/
-.wrangler/
+frontend/node_modules/
+frontend/dist/

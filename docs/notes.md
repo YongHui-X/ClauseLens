@@ -1,4 +1,4 @@
-# ClauseLens Technical Notes
+# QFind Technical Notes
 
 This document contains stable architecture notes, terminology, operating
 expectations, test prompts, and the engineering backlog. Measured results and
@@ -7,7 +7,7 @@ belong in the root `README.md`.
 
 ## Current Architecture
 
-ClauseLens is a contract-intelligence RAG application:
+QFind is a contract-intelligence RAG application:
 
 1. `app/cuad.py` prepares labeled CUAD clause evidence.
 2. `scripts/prepare_cuad_subset.py` writes the starter JSONL dataset.
@@ -84,7 +84,7 @@ Question
   -> top 3 are included in the answer-generation prompt
 ```
 
-ClauseLens uses adaptive reranking. Difficult intellectual-property
+QFind uses adaptive reranking. Difficult intellectual-property
 paraphrases are reranked, while ordinary literal queries stay on faster vector
 ordering. See `docs/experiments.md` for measured quality and latency.
 

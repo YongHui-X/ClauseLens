@@ -1,4 +1,4 @@
-"""Streamlit demo for ClauseLens contract clause retrieval."""
+"""Streamlit demo for QFind contract clause retrieval."""
 
 from __future__ import annotations
 
@@ -77,38 +77,38 @@ SIDEBAR_STYLE = """
 
 THINKING_INDICATOR = """
 <style>
-    .clauselens-thinking {
+    .qfind-thinking {
         display: inline-flex;
         align-items: center;
         gap: 0.35rem;
         color: #ffffff;
         font-weight: 600;
     }
-    .clauselens-thinking-dots {
+    .qfind-thinking-dots {
         display: inline-flex;
         align-items: center;
         gap: 0.2rem;
     }
-    .clauselens-thinking-dot {
+    .qfind-thinking-dot {
         width: 0.38rem;
         height: 0.38rem;
         border-radius: 50%;
         background: #ffffff;
-        animation: clauselens-thinking-bounce 1.1s infinite ease-in-out;
+        animation: qfind-thinking-bounce 1.1s infinite ease-in-out;
     }
-    .clauselens-thinking-dot:nth-child(2) { animation-delay: 0.16s; }
-    .clauselens-thinking-dot:nth-child(3) { animation-delay: 0.32s; }
-    @keyframes clauselens-thinking-bounce {
+    .qfind-thinking-dot:nth-child(2) { animation-delay: 0.16s; }
+    .qfind-thinking-dot:nth-child(3) { animation-delay: 0.32s; }
+    @keyframes qfind-thinking-bounce {
         0%, 60%, 100% { opacity: 0.3; transform: translateY(0); }
         30% { opacity: 1; transform: translateY(-0.28rem); }
     }
 </style>
-<div class="clauselens-thinking">
+<div class="qfind-thinking">
     <span>__LABEL__</span>
-    <span class="clauselens-thinking-dots" aria-label="Thinking">
-        <span class="clauselens-thinking-dot"></span>
-        <span class="clauselens-thinking-dot"></span>
-        <span class="clauselens-thinking-dot"></span>
+    <span class="qfind-thinking-dots" aria-label="Thinking">
+        <span class="qfind-thinking-dot"></span>
+        <span class="qfind-thinking-dot"></span>
+        <span class="qfind-thinking-dot"></span>
     </span>
 </div>
 """
@@ -431,14 +431,14 @@ def render_eval_panel() -> None:
 
 def main() -> None:
     st.set_page_config(
-        page_title="ClauseLens",
+        page_title="QFind",
         page_icon="CL",
         layout="wide",
         initial_sidebar_state="expanded",
     )
     st.markdown(SIDEBAR_STYLE, unsafe_allow_html=True)
     initialize_session_controls()
-    st.title("ClauseLens")
+    st.title("QFind")
     st.caption("Grounded contract clause chatbot over CUAD with citations.")
 
     with st.sidebar:

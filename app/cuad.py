@@ -1,4 +1,4 @@
-"""Helpers for turning raw CUAD files into clean ClauseLens records.
+"""Helpers for turning raw CUAD files into clean QFind records.
 
 This file does not do embedding or vector search. Its job is data preparation:
 read CUAD's CSV/text files, extract useful clause evidence, and write a simpler

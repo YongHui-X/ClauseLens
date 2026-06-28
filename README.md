@@ -1,9 +1,9 @@
-# ClauseLens
+# QFind
 
 > A citation-grounded RAG chatbot that helps legal, procurement, and compliance
 > teams find contract risks, rights, and obligations faster.
 
-ClauseLens answers plain-English questions using evidence retrieved from
+QFind answers plain-English questions using evidence retrieved from
 real-world contracts in the CUAD dataset. Every generated answer includes
 source-backed citations so users can verify the result against the retrieved
 contract language.
@@ -50,7 +50,7 @@ Detailed methodology and claim boundaries are documented in
 
 ### Token Usage and Estimated Cost
 
-ClauseLens keeps generation costs low by running dense retrieval, BM25 search,
+QFind keeps generation costs low by running dense retrieval, BM25 search,
 reciprocal-rank fusion, and cross-encoder reranking locally. The hosted model is
 used only for the final grounded answer, with compact evidence prompts and a
 160-token completion ceiling.
@@ -93,9 +93,34 @@ infrastructure charges.
 - Supported-topic routing and safe abstention.
 - Persistent chat history with open, delete, and new-chat controls.
 - Per-query latency telemetry and user feedback.
-- FastAPI backend and Streamlit chat interface.
+- React chat interface served by FastAPI, plus an optional Streamlit interface.
+- Browser-session API protection with signed `HttpOnly` cookies, origin checks,
+  and per-session/IP rate limits for public demo traffic.
 - Incremental indexing that skips unchanged contract clauses.
 - Repeatable retrieval, answer-quality, and performance evaluations.
+
+## Demo Protections
+
+QFind includes several practical safeguards for a public portfolio demo.
+They are designed to reduce casual abuse and make answers easier to verify,
+not to replace a full enterprise security review.
+
+| Protection | What it does | Why it matters |
+| --- | --- | --- |
+| Signed browser session | The React app first calls `GET /api/session`, which sets a signed `HttpOnly` cookie. Protected API routes require that cookie. | Blocks simple unauthenticated calls directly against `/search`, `/chat`, and `/chat/stream`. |
+| Same-origin check | Write-style API calls must come from the same browser origin, or from the configured `ALLOWED_ORIGIN`. | Reduces cross-site request abuse against the public demo. |
+| Rate limiting | Each browser session and client IP is limited by a sliding window. Defaults are 5 requests per minute and 50 per day. | Prevents one visitor from quickly burning API/model quota. |
+| `Retry-After` response | When rate limited, the API returns `429` with a wait time. | Gives the frontend and users a clear reason instead of failing silently. |
+| Narrow topic routing | The app only answers the five evaluated clause categories. Unsupported topics are rejected safely. | Avoids pretending the index covers every legal issue. |
+| Evidence-only answering | The answer model is instructed to answer only from retrieved evidence and cite sources like `[1]`. | Keeps responses tied to visible contract text. |
+| Prompt-injection guard | Retrieved contract text is treated as untrusted data, not as instructions to the model. | Prevents contract text from overriding the assistant's rules. |
+| Multi-contract overclaim guard | If retrieved contracts differ, are silent, or contain exceptions, the answer must qualify the result instead of giving a global yes/no. | Prevents answers like "all liability limits exclude punitive damages" when only some retrieved clauses say that. |
+| Compact evidence prompts | Only the strongest, query-relevant evidence is sent to the answer model. | Reduces cost, latency, and chances of irrelevant text influencing the answer. |
+
+The in-memory rate limiter is intentionally lightweight for demo-scale Cloud
+Run instances. For production multi-region or high-traffic use, this should be
+replaced with shared rate limiting such as Redis, Cloud Armor, API Gateway, or
+another centralized control.
 
 ## How It Works
 
@@ -132,7 +157,7 @@ BM25 lexical retrieval: 6 candidates
 Fusion: reciprocal-rank fusion, k=60
 Deduplication: one leading passage per contract
 Reranking: adaptive, top 3 candidates
-Returned evidence: up to 5 passages
+Returned evidence: top 3 passages in the React chat UI
 ```
 
 ## Technology Stack
@@ -145,15 +170,16 @@ Returned evidence: up to 5 passages
 | Lexical retrieval | In-memory BM25 |
 | Reranker | cross-encoder/ms-marco-MiniLM-L-6-v2 |
 | Answer model | OpenAI GPT-4.1 mini |
-| API | FastAPI |
-| Local interface | Streamlit |
-| Public deployment | Cloudflare Workers and React |
+| API and web service | FastAPI |
+| Primary interface | React/Vite served by FastAPI |
+| Optional local interface | Streamlit |
+| Public deployment | Cloud Run, Qdrant Cloud, and React |
 | Persistence | SQLite and JSONL telemetry |
 | Testing | pytest |
 
 ## Supported Contract Topics
 
-ClauseLens currently supports five clause categories:
+QFind currently supports five clause categories:
 
 1. Assignment restrictions
 2. Liability caps
@@ -168,11 +194,16 @@ answered using unrelated evidence.
 
 The current evaluated subset contains:
 
-| Item | Count |
-| --- | ---: |
-| Contracts | 30 |
-| Clause evidence records | 463 |
-| Supported clause categories | 5 |
+| Item | QFind | Full CUAD | Coverage |
+| --- | ---: | ---: | ---: |
+| Contracts | 30 | 510 | 5.9% |
+| Supported clause categories | 5 | 41 | 12.2% |
+| Clause evidence records | 463 | Not directly comparable | — |
+
+An indexed clause evidence record is one searchable clause passage with its
+source contract, category, citation metadata, and vector embedding. A contract
+can contribute multiple records, so the 463 records represent searchable
+passages from 30 contracts—not 463 of CUAD's 510 contracts.
 
 | Clause category | Records |
 | --- | ---: |
@@ -182,9 +213,9 @@ The current evaluated subset contains:
 | License Grant | 116 |
 | Termination For Convenience | 21 |
 
-CUAD contains approximately 500 commercial contracts and 41 clause
-categories. ClauseLens deliberately starts with a smaller evaluated scope
-rather than claiming broad coverage without sufficient testing.
+CUAD contains 510 commercial contracts and 41 clause categories. QFind
+deliberately starts with a smaller evaluated scope rather than claiming broad
+coverage without sufficient testing.
 
 ## Quick Start
 
@@ -201,6 +232,7 @@ OPENAI_API_KEY=...
 OPENAI_MODEL=gpt-4.1-mini-2025-04-14
 OPENAI_SERVICE_TIER=standard
 MODEL_WARMUP_ENABLED=true
+SESSION_SIGNING_SECRET=replace-with-a-random-local-secret
 ```
 
 ### 2. Install dependencies
@@ -212,7 +244,7 @@ python -m pip install -r requirements.txt
 The commands below use the existing project environment:
 
 ```powershell
-.\.conda-clauselens\python.exe
+python
 ```
 
 ### 3. Start Qdrant
@@ -228,8 +260,8 @@ cannot be opened by multiple processes simultaneously.
 ### 4. Prepare and index CUAD
 
 ```powershell
-.\.conda-clauselens\python.exe scripts\prepare_cuad_subset.py
-.\.conda-clauselens\python.exe scripts\index_qdrant.py
+python scripts\prepare_cuad_subset.py
+python scripts\index_qdrant.py
 ```
 
 The indexer stores a SHA-256 content hash and embedding model name with every
@@ -242,26 +274,59 @@ record. Later runs:
 
 Use `--recreate` only when intentionally rebuilding the collection.
 
-### 5. Run the API
+### 5. Build the React UI
+
+The FastAPI service serves the built React app from `frontend/dist` at `/`.
 
 ```powershell
-.\.conda-clauselens\python.exe -m uvicorn app.api:app --reload
+Set-Location frontend
+npm install
+npm run build
+Set-Location ..
 ```
 
-API documentation:
+### 6. Start the full local app
+
+Server mode uses the Docker Qdrant service from step 3:
+
+```powershell
+$env:QDRANT_MODE="server"
+$env:MODEL_WARMUP_ENABLED="false"
+$env:SESSION_SIGNING_SECRET="local-dev-session-secret"
+python -m uvicorn app.api:app --reload
+```
+
+Open the React chat UI:
+
+```text
+http://127.0.0.1:8000/
+```
+
+API documentation and readiness:
 
 ```text
 http://127.0.0.1:8000/docs
+http://127.0.0.1:8000/health
 ```
 
-Check `/health` and wait for `"ready": true`. Startup warmup loads the
-embedding model and reranker before the application begins accepting normal
-traffic.
-
-### 6. Run the Streamlit interface
+For quick local UI checks against the existing embedded index, use embedded
+mode instead of Docker Qdrant:
 
 ```powershell
-.\.conda-clauselens\python.exe -m streamlit run app\streamlit_app.py
+$env:QDRANT_MODE="embedded"
+$env:MODEL_WARMUP_ENABLED="false"
+$env:SESSION_SIGNING_SECRET="local-dev-session-secret"
+python -m uvicorn app.api:app --host 127.0.0.1 --port 8000
+```
+
+Keep `MODEL_WARMUP_ENABLED=false` for faster local startup. In production,
+Cloud Run can also run with warmup disabled to avoid startup failures on cold
+instances.
+
+### 7. Optional Streamlit interface
+
+```powershell
+python -m streamlit run app\streamlit_app.py
 ```
 
 Keep the API running while using Streamlit. The interface sends requests to:
@@ -270,7 +335,52 @@ Keep the API running while using Streamlit. The interface sends requests to:
 http://127.0.0.1:8000
 ```
 
+## Startup Commands
+
+Use these from the repository root after dependencies are installed.
+
+Build the React UI:
+
+```powershell
+Set-Location frontend
+npm run build
+Set-Location ..
+```
+
+Start the full local React + FastAPI app with the existing embedded index:
+
+```powershell
+$env:QDRANT_MODE="embedded"
+$env:MODEL_WARMUP_ENABLED="false"
+$env:SESSION_SIGNING_SECRET="local-dev-session-secret"
+python -m uvicorn app.api:app --host 127.0.0.1 --port 8000
+```
+
+Start the full local app against Docker Qdrant:
+
+```powershell
+docker compose up -d qdrant
+$env:QDRANT_MODE="server"
+$env:MODEL_WARMUP_ENABLED="false"
+$env:SESSION_SIGNING_SECRET="local-dev-session-secret"
+python -m uvicorn app.api:app --host 127.0.0.1 --port 8000
+```
+
+Open the app at:
+
+```text
+http://127.0.0.1:8000/
+```
+
 ## Application Surfaces
+
+### React Chat
+
+- Served from the FastAPI root path after `npm run build`.
+- Left-rail new chat, search history, and collapsible chat history controls.
+- Browser session bootstrap through `GET /api/session`.
+- Sends chat requests with credentials so the signed session cookie is included.
+- Shows up to three retrieved evidence passages with the grounded answer.
 
 ### Streamlit Chat
 
@@ -287,24 +397,36 @@ http://127.0.0.1:8000
 
 | Endpoint | Purpose |
 | --- | --- |
+| `GET /` | React chat UI when `frontend/dist` exists |
+| `GET /api` | API metadata |
+| `GET /api/session` | Signed browser session cookie |
 | `GET /health` | Readiness and model configuration |
 | `GET /clause-types` | Supported clause categories |
 | `POST /search` | Clause evidence retrieval |
 | `POST /chat` | Grounded non-streaming answer |
 | `POST /chat/stream` | Grounded streaming answer |
 
-Example search:
+`/clause-types`, `/search`, `/chat`, and `/chat/stream` require the browser
+session cookie and same-origin request headers. Direct unauthenticated API calls
+return `401`.
+
+Example protected search from PowerShell:
 
 ```powershell
-curl -X POST http://localhost:8000/search `
-  -H "Content-Type: application/json" `
-  -d "{\"query\":\"Does the contract restrict assignment?\",\"clause_type\":\"Anti-Assignment\",\"limit\":5}"
+$origin = "http://127.0.0.1:8000"
+Invoke-WebRequest "$origin/api/session" -SessionVariable clauseSession | Out-Null
+Invoke-WebRequest "$origin/search" `
+  -Method POST `
+  -WebSession $clauseSession `
+  -Headers @{ Origin = $origin } `
+  -ContentType "application/json" `
+  -Body '{"query":"Does the contract restrict assignment?","clause_type":"Anti-Assignment","limit":3}'
 ```
 
 ### Command-Line Search
 
 ```powershell
-.\.conda-clauselens\python.exe scripts\search_qdrant.py "Does the contract restrict assignment?"
+python scripts\search_qdrant.py "Does the contract restrict assignment?"
 ```
 
 ## Evaluation
@@ -312,7 +434,7 @@ curl -X POST http://localhost:8000/search `
 ### Retrieval Quality
 
 ```powershell
-.\.conda-clauselens\python.exe evaluation\eval.py `
+python evaluation\eval.py `
   --qdrant-mode server `
   --top-k 5 `
   --rerank-mode auto `
@@ -329,14 +451,14 @@ Run deterministic route, abstention, citation, required-concept, and
 overclaim checks:
 
 ```powershell
-.\.conda-clauselens\python.exe evaluation\answer_eval.py
+python evaluation\answer_eval.py
 ```
 
 Add an optional model judge for claim support, attribution, uncertainty, and
 directness:
 
 ```powershell
-.\.conda-clauselens\python.exe evaluation\answer_eval.py --judge
+python evaluation\answer_eval.py --judge
 ```
 
 The model judge incurs API usage and is intentionally excluded from normal
@@ -345,7 +467,7 @@ unit tests.
 ### End-to-End Performance
 
 ```powershell
-.\.conda-clauselens\python.exe evaluation\performance_benchmark.py `
+python evaluation\performance_benchmark.py `
   --model gpt-4.1-mini-2025-04-14 `
   --repeats 10 `
   --candidate-limit 3 `
@@ -357,7 +479,7 @@ This runs 120 sequential answer-quality and latency requests.
 ### Model and Service-Tier Comparison
 
 ```powershell
-.\.conda-clauselens\python.exe evaluation\performance_benchmark.py `
+python evaluation\performance_benchmark.py `
   --matrix `
   --repeats 3 `
   --output data\processed\performance_matrix.json
@@ -388,21 +510,17 @@ Accuracy claims come from the repeatable offline evaluations.
 
 ## Public Deployment
 
-The deployable application is under
-[cloudflare/](cloudflare/README.md). It uses a React interface, Cloudflare
-Worker streaming API, and a committed static retrieval index generated from
-the same 463 vectors validated by the Python benchmark.
+The primary deployment path is Cloud Run with Qdrant Cloud:
 
-Deployment protections include:
+```text
+Cloud Run FastAPI service
+  -> Qdrant Cloud live vector database
+  -> BM25 lexical index built from Qdrant payloads
+  -> OpenAI grounded answer generation
+  -> React chat UI served from the same origin
+```
 
-- Turnstile verification.
-- Per-IP minute and daily limits.
-- Global daily AI budget.
-- Concurrency leases.
-- Strict request-size limits.
-- Server-only API keys.
-
-A free `*.workers.dev` address is sufficient. A custom domain is optional.
+See [docs/cloud_run.md](docs/cloud_run.md) for the exact setup commands.
 
 ## Project Structure
 
@@ -415,6 +533,10 @@ app/
   rag.py                   hybrid retrieval and reranking
   streamlit_app.py         local chat interface
   telemetry.py             query metrics and feedback
+
+frontend/
+  src/                     React chat interface
+  dist/                    built assets served by FastAPI
 
 evaluation/
   answer_eval.py           generated-answer evaluation
@@ -431,16 +553,17 @@ scripts/
 
 tests/                     unit and integration tests
 docs/                      requirements, experiments, and results
+Dockerfile                 Cloud Run container entrypoint
 ```
 
 ## Testing
 
 ```powershell
-.\.conda-clauselens\python.exe -m pytest
-.\.conda-clauselens\python.exe -m ruff check .
+python -m pytest
+python -m ruff check .
 ```
 
-The current suite contains 72 passing tests covering:
+The current suite covers:
 
 - CUAD parsing and record preparation.
 - Incremental indexing.
@@ -470,19 +593,7 @@ The current suite contains 72 passing tests covering:
 - [Latest performance report](docs/performance_results_2026-06-22.md)
 - [Evaluation questions](docs/questions.md)
 
-## Resume Summary
-
-- Built a hybrid contract RAG pipeline using Qdrant dense retrieval, BM25,
-  reciprocal-rank fusion, and adaptive cross-encoder reranking over 463 clause
-  passages from 30 CUAD contracts across five clause types.
-- Achieved 100% Recall@5 and 98.2% context precision on an 11-case retrieval
-  evaluation, plus 100% deterministic answer accuracy and citation validity
-  with 2.43-second P95 latency across 120 sequential GPT-4.1 mini requests.
-- Kept estimated generation cost near $0.00060 per answer, or approximately
-  $0.60 per 1,000 answers, by using local retrieval and reranking with compact
-  grounded prompts.
-
-## Next Steps
+## Future plans
 
 - Expand coverage to 10 to 15 thoroughly evaluated clause categories.
 - Add full-contract chunking with character-level source spans.

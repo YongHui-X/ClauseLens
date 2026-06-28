@@ -1,12 +1,12 @@
-# ClauseLens Product Requirements
+# QFind Product Requirements
 
 ## Product Goal
 
-ClauseLens is a citation-grounded contract-intelligence chatbot. It helps users
+QFind is a citation-grounded contract-intelligence chatbot. It helps users
 ask plain-English questions, retrieve relevant clause evidence from CUAD, and
 receive concise answers that remain traceable to the source agreements.
 
-ClauseLens is a portfolio and research prototype, not a legal-advice system.
+QFind is a portfolio and research prototype, not a legal-advice system.
 
 ## Target Users
 
@@ -57,7 +57,7 @@ ClauseLens is a portfolio and research prototype, not a legal-advice system.
 
 ## Current RAG Design
 
-ClauseLens is a routed, metadata-filtered, dense retrieval RAG system with
+QFind is a routed, metadata-filtered, dense retrieval RAG system with
 adaptive cross-encoder reranking and grounded generation.
 
 The request flow is:

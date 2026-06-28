@@ -6,21 +6,43 @@ export type StreamEvent =
   | { event: "final"; data: ChatResponse }
   | { event: "error"; detail: string };
 
+let sessionPromise: Promise<void> | null = null;
+
+export async function bootstrapSession(): Promise<void> {
+  const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || "";
+  await ensureSession(apiBaseUrl);
+}
+
+async function ensureSession(apiBaseUrl: string): Promise<void> {
+  sessionPromise ??= fetch(`${apiBaseUrl}/api/session`, {
+    method: "GET",
+    credentials: "include",
+  }).then(async (response) => {
+    if (!response.ok) {
+      const body = (await response.json().catch(() => ({}))) as { detail?: string };
+      throw new Error(body.detail || `Session request failed (${response.status})`);
+    }
+  });
+  return sessionPromise;
+}
+
 export async function streamChat(
   messages: Message[],
   clauseType: string,
   limit: number,
-  turnstileToken: string,
   onEvent: (event: StreamEvent) => void,
 ): Promise<void> {
-  const response = await fetch("/api/chat/stream", {
+  const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || "";
+  await ensureSession(apiBaseUrl);
+  const response = await fetch(`${apiBaseUrl}/chat/stream`, {
     method: "POST",
+    credentials: "include",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       messages: messages.slice(-8).map(({ role, content }) => ({ role, content })),
       clause_type: clauseType || null,
       limit,
-      turnstile_token: turnstileToken,
+      rerank_mode: "off",
     }),
   });
   if (!response.ok || !response.body) {

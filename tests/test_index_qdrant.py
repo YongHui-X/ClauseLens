@@ -49,6 +49,7 @@ class FakeClient:
 def test_index_records_skips_unchanged_embeddings() -> None:
     record = {"id": "record-1", "text": "Same clause", "source_pdf": "a.pdf"}
     prepared = prepare_record(record, "embedding-model")
+    assert prepared["scope_id"] == "qfind"
     point_id = stable_point_id("record-1")
     client = FakeClient({point_id: prepared})
     model = FakeModel()

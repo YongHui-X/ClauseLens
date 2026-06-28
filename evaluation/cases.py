@@ -1,4 +1,4 @@
-"""Load ClauseLens retrieval evaluation cases."""
+"""Load QFind retrieval evaluation cases."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ DEFAULT_TEST_FILE = Path(__file__).parent / "tests.jsonl"
 
 
 class RetrievalTestCase(BaseModel):
-    """A retrieval test case for ClauseLens."""
+    """A retrieval test case for QFind."""
 
     question: str = Field(description="Natural-language contract review query")
     expected_clause_type: str = Field(description="Clause type expected in top-k results")

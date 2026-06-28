@@ -1,4 +1,4 @@
-"""FastAPI service for the ClauseLens retrieval demo."""
+"""FastAPI service for the QFind retrieval demo."""
 
 from __future__ import annotations
 
@@ -13,8 +13,9 @@ from dataclasses import field as dataclass_field
 from pathlib import Path
 
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Response
 from fastapi.responses import StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
 
 from app.chat import (
@@ -28,21 +29,31 @@ from app.chat import (
 from app.cuad import STARTER_CLAUSE_TYPES
 from app.rag import (
     COLLECTION,
+    DEFAULT_EVIDENCE_PATH,
     EMBEDDING_MODEL,
     QDRANT_PATH,
     RERANKER_MODEL,
     CrossEncoder,
+    LexicalIndex,
     QdrantClient,
     SentenceTransformer,
     create_qdrant_client,
     load_embedding_model,
     load_lexical_index,
+    load_qdrant_payload_records,
     load_reranker_model,
     search_clause_evidence,
     serialize_search_result,
 )
+from app.security import (
+    SlidingWindowRateLimiter,
+    issue_session_cookie,
+    make_session_dependency,
+)
 
 load_dotenv(dotenv_path=Path(__file__).resolve().parents[1] / ".env", override=False)
+
+FRONTEND_DIST = Path(__file__).resolve().parents[1] / "frontend" / "dist"
 
 
 class SearchRequest(BaseModel):
@@ -110,6 +121,8 @@ class SearchEngine:
     reranking_enabled: bool = False
     reranker_loader: Callable[[], CrossEncoder] | None = None
     lexical_index: object | None = None
+    lexical_source: str = "none"
+    lexical_record_count: int = 0
     _reranker_lock: threading.Lock = dataclass_field(
         default_factory=threading.Lock,
         init=False,
@@ -135,11 +148,21 @@ def _env_flag(name: str, *, default: bool) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _qdrant_server_url(override: str | None = None) -> str | None:
+    return (
+        override
+        or os.getenv("QDRANT_CLOUD_URL")
+        or os.getenv("QDRANT_URL")
+        or os.getenv("QDRANT_LOCAL_URL")
+    )
+
+
 def create_app(
     *,
     qdrant_path: Path = QDRANT_PATH,
     qdrant_mode: str | None = None,
     qdrant_url: str | None = None,
+    qdrant_api_key: str | None = None,
     collection_name: str = COLLECTION,
     model_name: str = EMBEDDING_MODEL,
     reranker_model_name: str | None = None,
@@ -162,6 +185,20 @@ def create_app(
         else warmup_enabled
     )
     engine_lock = threading.RLock()
+    rate_limiter = SlidingWindowRateLimiter()
+
+    def build_lexical_index(
+        client: QdrantClient,
+        effective_qdrant_mode: str,
+    ) -> tuple[object, str, int]:
+        if effective_qdrant_mode == "server":
+            records = load_qdrant_payload_records(
+                client,
+                collection_name=collection_name,
+            )
+            return LexicalIndex(records), "qdrant_payloads", len(records)
+        lexical_index = load_lexical_index()
+        return lexical_index, str(DEFAULT_EVIDENCE_PATH), len(lexical_index.records)
 
     @asynccontextmanager
     async def lifespan(app_instance: FastAPI):
@@ -195,7 +232,7 @@ def create_app(
         yield
 
     app = FastAPI(
-        title="ClauseLens API",
+        title="QFind API",
         description="Semantic clause-evidence search over CUAD contract records.",
         version="0.1.0",
         lifespan=lifespan,
@@ -203,6 +240,7 @@ def create_app(
     app.state.ready = not use_warmup
     app.state.warmup_error = None
     app.state.warmup_latency_ms = 0.0
+    app.state.lexical_error = None
 
     def get_search_engine() -> SearchEngine:
         # Tests can inject a fake engine on app.state without patching the
@@ -219,7 +257,10 @@ def create_app(
                 if engine is None:
                     engine = SearchEngine(
                         client=(
-                            create_qdrant_client(url=qdrant_url)
+                            create_qdrant_client(
+                                url=qdrant_url,
+                                api_key=qdrant_api_key,
+                            )
                             if (
                                 qdrant_mode
                                 or os.getenv("QDRANT_MODE", "server")
@@ -229,11 +270,25 @@ def create_app(
                         ),
                         model=load_embedding_model(model_name),
                         reranking_enabled=use_reranking,
-                        lexical_index=load_lexical_index(),
                         reranker_loader=lambda: load_reranker_model(
                             effective_reranker_model
                         ),
                     )
+                    effective_qdrant_mode = (
+                        qdrant_mode or os.getenv("QDRANT_MODE", "server")
+                    ).lower()
+                    try:
+                        (
+                            engine.lexical_index,
+                            engine.lexical_source,
+                            engine.lexical_record_count,
+                        ) = build_lexical_index(engine.client, effective_qdrant_mode)
+                        app.state.lexical_error = None
+                    except Exception as exc:
+                        engine.lexical_index = None
+                        engine.lexical_source = "error"
+                        engine.lexical_record_count = 0
+                        app.state.lexical_error = str(exc)
                     app.state.search_engine = engine
         return engine
 
@@ -260,11 +315,12 @@ def create_app(
 
     search_engine_dependency = Depends(get_search_engine)
     chat_engine_dependency = Depends(get_chat_engine)
+    browser_session_dependency = Depends(make_session_dependency(rate_limiter))
 
-    @app.get("/")
-    def root() -> dict[str, object]:
+    @app.get("/api")
+    def api_info() -> dict[str, object]:
         return {
-            "name": "ClauseLens API",
+            "name": "QFind API",
             "purpose": "Search CUAD contract clause evidence with citations.",
             "docs": "/docs",
             "health": "/health",
@@ -291,6 +347,10 @@ def create_app(
             },
         }
 
+    @app.get("/api/session")
+    def api_session(response: Response) -> dict[str, object]:
+        return issue_session_cookie(response)
+
     @app.get("/health")
     def health(engine: SearchEngine = search_engine_dependency) -> dict[str, object]:
         collection_ready = False
@@ -312,7 +372,14 @@ def create_app(
             "qdrant_mode": (
                 qdrant_mode or os.getenv("QDRANT_MODE", "server")
             ),
-            "qdrant_url": qdrant_url or os.getenv("QDRANT_URL"),
+            "qdrant_url": _qdrant_server_url(qdrant_url),
+            "qdrant_api_key_configured": bool(
+                qdrant_api_key or os.getenv("QDRANT_API_KEY")
+            ),
+            "lexical_ready": engine.lexical_index is not None,
+            "lexical_source": engine.lexical_source,
+            "lexical_record_count": engine.lexical_record_count,
+            "lexical_error": app.state.lexical_error,
             "model": model_name,
             "reranking_enabled": engine.reranking_enabled,
             "reranker_model": (
@@ -327,14 +394,20 @@ def create_app(
         }
 
     @app.get("/clause-types")
-    def clause_types() -> dict[str, list[str]]:
+    def clause_types(_session_id: str = browser_session_dependency) -> dict[str, list[str]]:
         return {"clause_types": STARTER_CLAUSE_TYPES}
 
     @app.post("/search", response_model=SearchResponse)
     def search(
         request: SearchRequest,
         engine: SearchEngine = search_engine_dependency,
+        _session_id: str = browser_session_dependency,
     ) -> SearchResponse:
+        if engine.lexical_source == "error":
+            raise HTTPException(
+                status_code=503,
+                detail=f"Lexical retrieval is not ready: {app.state.lexical_error}",
+            )
         try:
             results = search_clause_evidence(
                 client=engine.client,
@@ -363,7 +436,13 @@ def create_app(
     def chat(
         request: ChatRequest,
         engine: ChatEngine = chat_engine_dependency,
+        _session_id: str = browser_session_dependency,
     ) -> ChatResult:
+        if engine.search_engine.lexical_source == "error":
+            raise HTTPException(
+                status_code=503,
+                detail=f"Lexical retrieval is not ready: {app.state.lexical_error}",
+            )
         try:
             # Chat failures should surface as a clear HTTP error instead of a
             # silent 500, because the frontend needs to distinguish config
@@ -381,9 +460,14 @@ def create_app(
     def chat_stream(
         request: ChatRequest,
         engine: ChatEngine = chat_engine_dependency,
+        _session_id: str = browser_session_dependency,
     ) -> StreamingResponse:
         def event_stream():
             try:
+                if engine.search_engine.lexical_source == "error":
+                    raise ValueError(
+                        f"Lexical retrieval is not ready: {app.state.lexical_error}"
+                    )
                 yield from stream_chat_turn(engine=engine, request=request)
             except Exception as exc:
                 yield json.dumps(
@@ -406,6 +490,13 @@ def create_app(
     app.dependency_overrides_provider = app
     app.state.get_search_engine = get_search_engine
     app.state.get_chat_engine = get_chat_engine
+    app.state.rate_limiter = rate_limiter
+    if FRONTEND_DIST.exists():
+        app.mount(
+            "/",
+            StaticFiles(directory=FRONTEND_DIST, html=True),
+            name="frontend",
+        )
     return app
 
 

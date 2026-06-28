@@ -5,9 +5,10 @@ from fastapi.testclient import TestClient
 from app.api import SearchEngine, create_app
 from app.chat import (
     ANSWER_SYSTEM_PROMPT,
-    QUERY_REWRITE_SYSTEM_PROMPT,
     ChatEngine,
 )
+
+ORIGIN = "http://testserver"
 
 
 class FakeVector:
@@ -43,7 +44,9 @@ class FakeClient:
         query_filter = kwargs.get("query_filter")
         clause_type = None
         if query_filter is not None:
-            clause_type = query_filter.must[0].match.value  # type: ignore[attr-defined]
+            for condition in query_filter.must:  # type: ignore[attr-defined]
+                if condition.key == "clause_type":
+                    clause_type = condition.match.value
 
         if clause_type == "Termination For Convenience":
             payload = {
@@ -95,8 +98,6 @@ class FakeChatClient:
                 "max_tokens": max_tokens,
             }
         )
-        if system_prompt == QUERY_REWRITE_SYSTEM_PROMPT:
-            return "termination for convenience after notice"
         if system_prompt == ANSWER_SYSTEM_PROMPT:
             return "Yes. The contract allows termination for convenience with notice. [1]"
         raise AssertionError(f"Unexpected prompt: {system_prompt}")
@@ -120,17 +121,20 @@ def build_test_client() -> tuple[TestClient, FakeClient]:
         llm=fake_llm,
         model_name="fake-model",
     )
-    return TestClient(app), fake_client
+    client = TestClient(app, headers={"origin": ORIGIN})
+    session_response = client.get("/api/session")
+    assert session_response.status_code == 200
+    return client, fake_client
 
 
-def test_root_describes_available_api_routes() -> None:
+def test_api_info_describes_available_api_routes() -> None:
     client, _ = build_test_client()
 
-    response = client.get("/")
+    response = client.get("/api")
 
     assert response.status_code == 200
     body = response.json()
-    assert body["name"] == "ClauseLens API"
+    assert body["name"] == "QFind API"
     assert body["docs"] == "/docs"
     assert body["search"]["path"] == "/search"
 
@@ -158,6 +162,11 @@ def test_lifespan_warms_models_before_reporting_ready(monkeypatch) -> None:
     monkeypatch.setattr(api_module, "create_qdrant_client", lambda **_: fake_client)
     monkeypatch.setattr(api_module, "load_embedding_model", lambda _: fake_model)
     monkeypatch.setattr(api_module, "load_reranker_model", lambda _: fake_reranker)
+    monkeypatch.setattr(
+        api_module,
+        "load_qdrant_payload_records",
+        lambda *_args, **_kwargs: [{"id": "record-1", "text": "Same clause"}],
+    )
     monkeypatch.setattr(api_module, "create_chat_client", lambda: fake_llm)
 
     app = api_module.create_app(warmup_enabled=True)
@@ -176,6 +185,40 @@ def test_clause_types_lists_supported_filters() -> None:
 
     assert response.status_code == 200
     assert "Audit Rights" in response.json()["clause_types"]
+
+
+def test_protected_endpoint_rejects_missing_session() -> None:
+    app = create_app(warmup_enabled=False)
+    app.state.search_engine_override = SearchEngine(
+        client=FakeClient(),
+        model=FakeModel(),
+    )
+    client = TestClient(app, headers={"origin": ORIGIN})
+
+    response = client.post("/search", json={"query": "audit rights", "limit": 1})
+
+    assert response.status_code == 401
+    assert "Browser session required" in response.json()["detail"]
+
+
+def test_rate_limit_returns_retry_guidance() -> None:
+    app = create_app(warmup_enabled=False)
+    app.state.search_engine_override = SearchEngine(
+        client=FakeClient(),
+        model=FakeModel(),
+    )
+    client = TestClient(app, headers={"origin": ORIGIN})
+    assert client.get("/api/session").status_code == 200
+    app.state.rate_limiter.per_minute = 1
+    app.state.rate_limiter.per_day = 10
+
+    first = client.get("/clause-types")
+    second = client.get("/clause-types")
+
+    assert first.status_code == 200
+    assert second.status_code == 429
+    assert second.headers["Retry-After"]
+    assert "Try again" in second.json()["detail"]
 
 
 def test_search_returns_cited_clause_results() -> None:
@@ -216,7 +259,8 @@ def test_search_uses_candidate_pool_when_reranking_is_enabled() -> None:
         reranker=FakeReranker(),  # type: ignore[arg-type]
         reranking_enabled=True,
     )
-    client = TestClient(app)
+    client = TestClient(app, headers={"origin": ORIGIN})
+    assert client.get("/api/session").status_code == 200
 
     response = client.post("/search", json={"query": "audit rights", "limit": 3})
 
@@ -250,7 +294,9 @@ def test_search_accepts_blank_clause_type_as_no_filter() -> None:
 
     assert response.status_code == 200
     assert response.json()["clause_type"] is None
-    assert fake_client.calls[0]["query_filter"] is None
+    query_filter = fake_client.calls[0]["query_filter"]
+    assert query_filter is not None
+    assert query_filter.must[0].key == "scope_id"
 
 
 def test_chat_returns_grounded_answer_with_citations() -> None:

@@ -6,7 +6,7 @@ pythonpath = ["."]
 target-version = "py311"
 line-length = 88
 exclude = [
-    ".conda-clauselens",
+    ".conda-qfind",
     ".venv",
     ".venv311",
     "data",

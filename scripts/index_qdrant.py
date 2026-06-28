@@ -1,12 +1,15 @@
-"""Index prepared ClauseLens evidence records into Qdrant."""
+"""Index prepared QFind evidence records into Qdrant."""
 
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
+
+from dotenv import load_dotenv
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
@@ -21,8 +24,10 @@ from app.rag import (  # noqa: E402
     create_qdrant_client,
     embedding_content_hash,
     ensure_collection,
+    ensure_payload_indexes,
     load_embedding_model,
     load_jsonl_records,
+    record_with_scope,
     stable_point_id,
 )
 
@@ -62,7 +67,7 @@ def load_existing_points(
 def prepare_record(record: dict[str, object], model_name: str) -> dict[str, object]:
     """Attach the fingerprint needed for incremental indexing."""
 
-    prepared = dict(record)
+    prepared = record_with_scope(record)
     prepared[HASH_PAYLOAD_KEY] = embedding_content_hash(str(record["text"]))
     prepared[MODEL_PAYLOAD_KEY] = model_name
     return prepared
@@ -150,7 +155,7 @@ def index_records(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Index prepared ClauseLens evidence records into Qdrant."
+        description="Index prepared QFind evidence records into Qdrant."
     )
     parser.add_argument(
         "--input",
@@ -159,8 +164,24 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--url",
-        default=QDRANT_URL,
+        default=(
+            os.getenv("QDRANT_CLOUD_URL")
+            or os.getenv("QDRANT_URL")
+            or os.getenv("QDRANT_LOCAL_URL")
+            or QDRANT_URL
+        ),
         help="Qdrant server URL. Ignored when --qdrant-path is provided.",
+    )
+    parser.add_argument(
+        "--api-key",
+        default=os.getenv("QDRANT_API_KEY"),
+        help="Qdrant Cloud API key. Ignored when --qdrant-path is provided.",
+    )
+    parser.add_argument(
+        "--timeout",
+        type=float,
+        default=float(os.getenv("QDRANT_TIMEOUT_SECONDS", "120")),
+        help="Qdrant request timeout in seconds.",
     )
     parser.add_argument(
         "--qdrant-path",
@@ -179,6 +200,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    load_dotenv(PROJECT_ROOT / ".env", override=False)
     args = parse_args()
     records = load_jsonl_records(args.input)
     if not records:
@@ -186,13 +208,14 @@ def main() -> None:
 
     model = load_embedding_model(args.model)
     client = create_qdrant_client(path=args.qdrant_path) if args.qdrant_path else (
-        create_qdrant_client(url=args.url)
+        create_qdrant_client(url=args.url, api_key=args.api_key, timeout=args.timeout)
     )
 
     if args.recreate and client.collection_exists(collection_name=args.collection):
         client.delete_collection(collection_name=args.collection)
 
     ensure_collection(client, collection_name=args.collection)
+    ensure_payload_indexes(client, collection_name=args.collection)
 
     indexed, unchanged, metadata_updates = index_records(
         client=client,

@@ -1,4 +1,4 @@
-# ClauseLens Manual Test Questions
+# QFind Manual Test Questions
 
 This document contains manual test questions that are not included in
 `docs/notes.md`. Use them to test topic routing, retrieval quality, grounded
@@ -31,7 +31,7 @@ Expected clause type: `Cap On Liability`
 Are lost profits and anticipated savings recoverable?
 Does the liability limitation exclude punitive and consequential damages?
 Are intellectual-property infringement claims exempt from the liability limitation?
-Can unpaid royalties or milestones qualify as direct damages?
+
 Which categories of loss are excluded by the agreement?
 ```
 

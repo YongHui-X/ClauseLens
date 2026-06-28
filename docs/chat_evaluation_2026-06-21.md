@@ -1,4 +1,4 @@
-# ClauseLens Chat Evaluation — 2026-06-21
+# QFind Chat Evaluation — 2026-06-21
 
 ## Scope
 
@@ -150,8 +150,8 @@ Weaknesses:
 5. Run the answer-quality benchmark after stopping the API:
 
    ```powershell
-   .\.conda-clauselens\python.exe evaluation\answer_eval.py
-   .\.conda-clauselens\python.exe evaluation\answer_eval.py --judge
+   python evaluation\answer_eval.py
+   python evaluation\answer_eval.py --judge
    ```
 
 6. Collect at least 100 representative turns before making stable P50, P95, or

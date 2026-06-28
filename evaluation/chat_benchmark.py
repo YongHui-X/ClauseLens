@@ -1,4 +1,4 @@
-"""Benchmark end-to-end chat latency for ClauseLens."""
+"""Benchmark end-to-end chat latency for QFind."""
 
 from __future__ import annotations
 
@@ -452,7 +452,7 @@ def print_comparison(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Benchmark ClauseLens chat latency against JSONL test cases."
+        description="Benchmark QFind chat latency against JSONL test cases."
     )
     parser.add_argument("--tests", type=Path, default=DEFAULT_TEST_FILE)
     parser.add_argument(

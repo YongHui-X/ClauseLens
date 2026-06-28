@@ -1,6 +1,6 @@
 import type { SavedChat } from "./types";
 
-const STORAGE_KEY = "clauselens.chats.v1";
+const STORAGE_KEY = "qfind.chats.v1";
 const MAX_CHATS = 20;
 
 export function loadChats(): SavedChat[] {
@@ -22,5 +22,5 @@ export function persistChats(chats: SavedChat[]): void {
 
 export function chatTitle(question: string): string {
   const clean = question.replace(/\s+/g, " ").trim();
-  return clean.length <= 52 ? clean : `${clean.slice(0, 51).trim()}…`;
+  return clean.length <= 52 ? clean : `${clean.slice(0, 49).trim()}...`;
 }

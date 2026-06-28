@@ -1,4 +1,4 @@
-# ClauseLens Performance Results — 2026-06-22
+# QFind Performance Results — 2026-06-22
 
 ## Test Configuration
 

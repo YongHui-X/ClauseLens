@@ -1,13 +1,13 @@
 services:
   qdrant:
     image: qdrant/qdrant:v1.18.0
-    container_name: clauselens-qdrant
+    container_name: qfind-qdrant
     restart: unless-stopped
     ports:
       - "6333:6333"
       - "6334:6334"
     volumes:
-      - clauselens-qdrant-data:/qdrant/storage
+      - qfind-qdrant-data:/qdrant/storage
     healthcheck:
       test:
         [
@@ -19,4 +19,4 @@ services:
       retries: 20
 
 volumes:
-  clauselens-qdrant-data:
+  qfind-qdrant-data:

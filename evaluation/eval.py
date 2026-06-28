@@ -1,7 +1,7 @@
-"""Retrieval evaluation for ClauseLens.
+"""Retrieval evaluation for QFind.
 
 This evaluates the current retrieval layer only. It intentionally does not
-score generated answers yet because ClauseLens does not have answer generation.
+score generated answers yet because QFind does not have answer generation.
 """
 
 from __future__ import annotations
@@ -430,7 +430,7 @@ def print_summary(results: list[RetrievalEvalResult]) -> None:
         sum(result.reranking_latency_ms for result in results) / len(results)
     )
 
-    print("ClauseLens Retrieval Evaluation")
+    print("QFind Retrieval Evaluation")
     print("=" * 36)
     print(f"Cases: {len(results)}")
     print(f"Passed: {pass_count}/{len(results)}")
@@ -460,7 +460,7 @@ def print_summary(results: list[RetrievalEvalResult]) -> None:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Evaluate ClauseLens retrieval against JSONL test cases."
+        description="Evaluate QFind retrieval against JSONL test cases."
     )
     parser.add_argument("--tests", type=Path, default=DEFAULT_TEST_FILE)
     parser.add_argument("--qdrant-path", type=Path, default=QDRANT_PATH)

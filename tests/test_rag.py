@@ -5,6 +5,8 @@ import pytest
 from app.rag import (
     LexicalIndex,
     SearchDiagnostics,
+    create_qdrant_client,
+    load_qdrant_payload_records,
     make_clause_type_filter,
     search_clause_evidence,
 )
@@ -59,15 +61,16 @@ class FakeReranker:
 
 
 def test_make_clause_type_filter_returns_none_without_clause_type() -> None:
-    assert make_clause_type_filter(None) is None
-    assert make_clause_type_filter("") is None
+    assert make_clause_type_filter(None).must[0].key == "scope_id"
+    assert make_clause_type_filter("").must[0].match.value == "qfind"
 
 
 def test_make_clause_type_filter_matches_clause_type() -> None:
     query_filter = make_clause_type_filter("Audit Rights")
 
     assert query_filter is not None
-    condition = query_filter.must[0]
+    assert query_filter.must[0].key == "scope_id"
+    condition = query_filter.must[1]
     assert condition.key == "clause_type"
     assert condition.match.value == "Audit Rights"
 
@@ -185,6 +188,23 @@ def test_search_clause_evidence_optional_reranking_keeps_vector_order() -> None:
     assert results[0].reranker_score is None
 
 
+def test_search_clause_evidence_always_scopes_qdrant_query() -> None:
+    client = FakeClient()
+
+    search_clause_evidence(
+        client=client,
+        model=FakeModel(),
+        query="assignment",
+        limit=1,
+        clause_type=None,
+    )
+
+    query_filter = client.calls[0]["query_filter"]
+    assert query_filter is not None
+    assert query_filter.must[0].key == "scope_id"
+    assert query_filter.must[0].match.value == "qfind"
+
+
 def test_search_clause_evidence_requires_reranker_when_enabled() -> None:
     with pytest.raises(ValueError, match="reranker is required"):
         search_clause_evidence(
@@ -230,3 +250,66 @@ def test_hybrid_search_fuses_and_deduplicates_documents() -> None:
 
     assert {result.document_id for result in results} == {"doc-a", "doc-b"}
     assert all(result.fused_score is not None for result in results)
+
+
+def test_create_qdrant_client_passes_api_key_for_server_mode(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_qdrant_client(**kwargs: object) -> object:
+        captured.update(kwargs)
+        return object()
+
+    monkeypatch.setattr("app.rag.QdrantClient", fake_qdrant_client)
+
+    create_qdrant_client(url="https://example.qdrant.io ", api_key=" secret-key\r\n")
+
+    assert captured == {
+        "url": "https://example.qdrant.io",
+        "api_key": "secret-key",
+    }
+
+
+def test_create_qdrant_client_prefers_cloud_url_env(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_qdrant_client(**kwargs: object) -> object:
+        captured.update(kwargs)
+        return object()
+
+    monkeypatch.setattr("app.rag.QdrantClient", fake_qdrant_client)
+    monkeypatch.setenv("QDRANT_CLOUD_URL", "https://cloud.qdrant.io")
+    monkeypatch.setenv("QDRANT_LOCAL_URL", "http://localhost:6333")
+    monkeypatch.delenv("QDRANT_URL", raising=False)
+    monkeypatch.delenv("QDRANT_API_KEY", raising=False)
+
+    create_qdrant_client()
+
+    assert captured == {"url": "https://cloud.qdrant.io"}
+
+
+def test_load_qdrant_payload_records_scrolls_all_payloads() -> None:
+    class FakeScrollClient:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def scroll(self, **kwargs: object) -> tuple[list[SimpleNamespace], object | None]:
+            self.calls += 1
+            assert kwargs["collection_name"] == "clauses"
+            assert kwargs["with_payload"] is True
+            assert kwargs["with_vectors"] is False
+            if self.calls == 1:
+                return (
+                    [
+                        SimpleNamespace(payload={"id": "a", "text": "first"}),
+                        SimpleNamespace(payload={"id": "missing-text"}),
+                    ],
+                    "next",
+                )
+            return ([SimpleNamespace(payload={"id": "b", "text": "second"})], None)
+
+    records = load_qdrant_payload_records(
+        FakeScrollClient(),  # type: ignore[arg-type]
+        collection_name="clauses",
+    )
+
+    assert records == [{"id": "a", "text": "first"}, {"id": "b", "text": "second"}]

@@ -1,4 +1,4 @@
-"""Shared RAG/Qdrant helpers for ClauseLens.
+"""Shared RAG/Qdrant helpers for QFind.
 
 RAG means Retrieval-Augmented Generation. In this project, the retrieval part is:
 1. turn contract/clause text into embeddings,
@@ -28,7 +28,9 @@ from qdrant_client.models import (
     Distance,
     FieldCondition,
     Filter,
+    KeywordIndexParams,
     MatchValue,
+    PayloadSchemaType,
     PointStruct,
     VectorParams,
 )
@@ -49,12 +51,15 @@ RERANK_CANDIDATE_LIMIT = int(os.getenv("RERANK_CANDIDATE_LIMIT", "3"))
 HYBRID_CANDIDATE_LIMIT = int(os.getenv("HYBRID_CANDIDATE_LIMIT", "6"))
 RRF_K = int(os.getenv("RRF_K", "60"))
 DEFAULT_EVIDENCE_PATH = Path("data/processed/starter_clause_evidence.jsonl")
+SCOPE_ID = os.getenv("QFIND_SCOPE_ID", "qfind")
+SCOPE_PAYLOAD_KEY = "scope_id"
 
 # Embedded/local Qdrant path. This works without Docker or a Qdrant server.
 QDRANT_PATH = Path("data/qdrant_local")
 
 # Server URL used when Qdrant is running separately, usually via Docker.
-QDRANT_URL = "http://localhost:6333"
+QDRANT_LOCAL_URL = "http://localhost:6333"
+QDRANT_URL = QDRANT_LOCAL_URL
 
 # __all__ is optional. It documents which names this module expects other code
 # to import when someone writes "from app.rag import ...".
@@ -65,13 +70,18 @@ __all__ = [
     "RERANKER_MODEL",
     "RERANK_CANDIDATE_LIMIT",
     "HYBRID_CANDIDATE_LIMIT",
+    "SCOPE_ID",
+    "SCOPE_PAYLOAD_KEY",
     "DEFAULT_EVIDENCE_PATH",
     "QDRANT_PATH",
+    "QDRANT_LOCAL_URL",
     "QDRANT_URL",
     "Distance",
     "FieldCondition",
     "Filter",
+    "KeywordIndexParams",
     "MatchValue",
+    "PayloadSchemaType",
     "PointStruct",
     "QdrantClient",
     "CrossEncoder",
@@ -79,6 +89,8 @@ __all__ = [
     "VectorParams",
     "create_qdrant_client",
     "create_configured_qdrant_client",
+    "load_qdrant_payload_records",
+    "record_with_scope",
     "embedding_content_hash",
     "ensure_collection",
     "load_jsonl_records",
@@ -169,7 +181,7 @@ class LexicalIndex:
     """Small BM25 index over prepared clause evidence records."""
 
     def __init__(self, records: list[dict[str, object]]) -> None:
-        self.records = [dict(record) for record in records]
+        self.records = [record_with_scope(record) for record in records]
         self.tokens = [lexical_tokens(str(record.get("text", ""))) for record in records]
         self.lengths = [len(tokens) for tokens in self.tokens]
         self.average_length = (
@@ -202,6 +214,8 @@ class LexicalIndex:
         for record, tokens, length in zip(
             self.records, self.tokens, self.lengths, strict=True
         ):
+            if record.get(SCOPE_PAYLOAD_KEY) != SCOPE_ID:
+                continue
             if clause_type and record.get("clause_type") != clause_type:
                 continue
             frequencies = Counter(tokens)
@@ -248,8 +262,16 @@ def embedding_content_hash(text: str) -> str:
     return hashlib.sha256(normalized_text.encode("utf-8")).hexdigest()
 
 
+def record_with_scope(record: dict[str, object]) -> dict[str, object]:
+    """Return an evidence payload constrained to the QFind retrieval scope."""
+
+    scoped_record = dict(record)
+    scoped_record[SCOPE_PAYLOAD_KEY] = SCOPE_ID
+    return scoped_record
+
+
 def load_jsonl_records(path: Path) -> list[dict[str, object]]:
-    """Load prepared ClauseLens evidence records from JSONL."""
+    """Load prepared QFind evidence records from JSONL."""
 
     records: list[dict[str, object]] = []
     with path.open("r", encoding="utf-8") as file:
@@ -261,7 +283,7 @@ def load_jsonl_records(path: Path) -> list[dict[str, object]]:
             record = json.loads(line)
             if not record.get("id") or not record.get("text"):
                 raise ValueError(f"Record on line {line_number} must include id and text")
-            records.append(record)
+            records.append(record_with_scope(record))
 
     return records
 
@@ -270,6 +292,8 @@ def create_qdrant_client(
     *,
     url: str | None = None,
     path: str | Path | None = None,
+    api_key: str | None = None,
+    timeout: float | None = None,
 ) -> QdrantClient:
     """Create a Qdrant client.
 
@@ -294,7 +318,20 @@ def create_qdrant_client(
     # os.getenv("QDRANT_URL", QDRANT_URL) means:
     # use the environment variable QDRANT_URL if it exists, otherwise use the
     # default constant "http://localhost:6333".
-    return QdrantClient(url=url or os.getenv("QDRANT_URL", QDRANT_URL))
+    effective_api_key = (api_key or os.getenv("QDRANT_API_KEY") or "").strip()
+    effective_url = (
+        url
+        or os.getenv("QDRANT_CLOUD_URL")
+        or os.getenv("QDRANT_URL")
+        or os.getenv("QDRANT_LOCAL_URL")
+        or QDRANT_LOCAL_URL
+    ).strip()
+    kwargs: dict[str, object] = {"url": effective_url}
+    if effective_api_key:
+        kwargs["api_key"] = effective_api_key
+    if timeout is not None:
+        kwargs["timeout"] = timeout
+    return QdrantClient(**kwargs)
 
 
 def create_configured_qdrant_client(
@@ -302,15 +339,48 @@ def create_configured_qdrant_client(
     mode: str | None = None,
     url: str | None = None,
     path: str | Path | None = None,
+    api_key: str | None = None,
 ) -> QdrantClient:
     """Create Qdrant using the shared server-or-embedded application setting."""
 
     effective_mode = (mode or os.getenv("QDRANT_MODE", "server")).strip().lower()
     if effective_mode == "server":
-        return create_qdrant_client(url=url)
+        return create_qdrant_client(url=url, api_key=api_key)
     if effective_mode == "embedded":
         return create_qdrant_client(path=path or QDRANT_PATH)
     raise ValueError("QDRANT_MODE must be 'server' or 'embedded'")
+
+
+def load_qdrant_payload_records(
+    client: QdrantClient,
+    *,
+    collection_name: str = COLLECTION,
+    batch_size: int = 256,
+) -> list[dict[str, object]]:
+    """Load all indexed payloads from Qdrant for deploy-time BM25 construction."""
+
+    records: list[dict[str, object]] = []
+    offset: object | None = None
+    while True:
+        points, offset = client.scroll(
+            collection_name=collection_name,
+            limit=batch_size,
+            offset=offset,
+            scroll_filter=make_clause_type_filter(None),
+            with_payload=True,
+            with_vectors=False,
+        )
+        for point in points:
+            payload = dict(point.payload or {})
+            if payload.get("id") and payload.get("text"):
+                records.append(payload)
+        if offset is None:
+            break
+    if not records:
+        raise ValueError(
+            f"No payload records with id/text found in Qdrant collection {collection_name}"
+        )
+    return records
 
 
 def ensure_collection(
@@ -342,6 +412,21 @@ def ensure_collection(
     )
 
 
+def ensure_payload_indexes(
+    client: QdrantClient,
+    *,
+    collection_name: str = COLLECTION,
+) -> None:
+    """Create payload indexes required by filtered Qdrant Cloud searches."""
+
+    for field_name in (SCOPE_PAYLOAD_KEY, "clause_type", "document_id"):
+        client.create_payload_index(
+            collection_name=collection_name,
+            field_name=field_name,
+            field_schema=KeywordIndexParams(type=PayloadSchemaType.KEYWORD),
+        )
+
+
 def load_embedding_model(model_name: str = EMBEDDING_MODEL) -> SentenceTransformer:
     """Load the sentence-transformers embedding model.
 
@@ -359,20 +444,23 @@ def load_reranker_model(model_name: str = RERANKER_MODEL) -> CrossEncoder:
     return CrossEncoder(model_name)
 
 
-def make_clause_type_filter(clause_type: str | None) -> Filter | None:
-    """Build a Qdrant payload filter for a CUAD clause type."""
+def make_clause_type_filter(clause_type: str | None) -> Filter:
+    """Build the mandatory QFind scope filter, optionally narrowed by type."""
 
-    if not clause_type:
-        return None
-
-    return Filter(
-        must=[
+    conditions = [
+        FieldCondition(
+            key=SCOPE_PAYLOAD_KEY,
+            match=MatchValue(value=SCOPE_ID),
+        )
+    ]
+    if clause_type:
+        conditions.append(
             FieldCondition(
                 key="clause_type",
                 match=MatchValue(value=clause_type),
             )
-        ]
-    )
+        )
+    return Filter(must=conditions)
 
 
 def search_clause_evidence(
