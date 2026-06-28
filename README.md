@@ -13,6 +13,9 @@ records from 30 CUAD contracts. It reached 100% Recall@5, 98.2% context
 precision, 1.000 MRR, 100% deterministic answer accuracy, and 100% citation
 validity on the final benchmark.
 
+**Live production demo:** [qfind-736872970476.asia-southeast1.run.app](https://qfind-736872970476.asia-southeast1.run.app/)  
+This is the live QFind RAG chatbot deployed on Google Cloud Run.
+
 This is a portfolio research prototype. It is not a legal advice tool.
 
 ## At a Glance
@@ -31,12 +34,10 @@ This is a portfolio research prototype. It is not a legal advice tool.
 
 ### Video Walkthrough
 
-<video src="docs/Media/QFind%20demo.mp4" controls width="900">
-  Your browser does not support embedded video. Open the demo here:
-  docs/Media/QFind%20demo.mp4
-</video>
+<img src="docs/Media/shortdemomp4.gif" alt="QFind RAG chatbot demo preview" width="900">
 
-[Open the QFind demo video](docs/Media/QFind%20demo.mp4)
+For a more detailed demo, please refer to the
+[full MP4 walkthrough](docs/Media/QFind%20demo.mp4).
 
 ### Cited Evidence
 
