@@ -124,10 +124,18 @@ it also reduced deterministic pass rates. The main failures were:
 
 These results are suitable for a portfolio benchmark, not a production SLA:
 
+- Retrieval claims are based on 11 curated passage-level cases.
+- Answer-quality claims are deterministic checks over 12 curated generated-answer
+  cases.
+- The 120-request benchmark repeats those 12 answer cases and reports 100%
+  deterministic pass, citation validity, and answer-mode consistency, while
+  stricter hosted-model latency gates still fail.
 - Each model/tier configuration used 36 sequential requests.
 - The workload is curated and limited to five supported clause categories.
 - No concurrent-user load was tested.
-- Model-judge faithfulness was not included in this matrix.
+- Model-judge faithfulness was not included in this matrix. Ragas is now
+  available as a manual or scheduled release-quality benchmark, not a default
+  pull-request gate.
 
 ## Hybrid Retrieval And Accuracy Recovery
 

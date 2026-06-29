@@ -9,15 +9,32 @@ relevant contract language, writes a concise answer, and shows the cited evidenc
 used to produce it.
 
 The evaluated version of this RAG chatbot was tested on 463 clause evidence
-records from 30 CUAD contracts. It reached 100% Recall@5, 98.2% context
-precision, 1.000 MRR, 100% deterministic answer accuracy, and 100% citation
-validity on the final benchmark.
+records from 30 CUAD contracts. On the 11-case retrieval suite it reached
+100% Recall@5, 98.2% average context precision, 1.000 MRR, and 0.998 nDCG.
+On the final 120-request answer benchmark, it passed deterministic
+route/citation/concept checks for repeated runs of 12 curated answer cases.
 
 **Live production demo:** [qfind-736872970476.asia-southeast1.run.app](https://qfind-736872970476.asia-southeast1.run.app/)  
 
 This is the live QFind RAG chatbot deployed on Google Cloud Run. Note that there is a 20 seconds warm up time when first loaded due to the nature of Google Cloud Run having to do a cold start, a trade off for hosting free on their platform.
 
 This is a portfolio research prototype. It is not a legal advice tool.
+
+## Contents
+
+- [Verified Results](#verified-results)
+- [Why It Matters](#why-it-matters)
+- [Core Capabilities](#core-capabilities)
+- [Demo Protections](#demo-protections)
+- [How It Works](#how-it-works)
+- [Technology Stack](#technology-stack)
+- [Supported Contract Topics](#supported-contract-topics)
+- [Quick Start](#quick-start)
+- [Application Surfaces](#application-surfaces)
+- [Evaluation](#evaluation)
+- [CI/CD](#cicd)
+- [Deployment](#public-deployment)
+- [Project Structure](#project-structure)
 
 ## At a Glance
 
@@ -62,22 +79,6 @@ than answered from unrelated evidence.
 
 <img src="docs/Media/unsupported%20topics.png" alt="QFind unsupported topic response" width="900">
 
-## Contents
-
-- [Verified Results](#verified-results)
-- [Why It Matters](#why-it-matters)
-- [Core Capabilities](#core-capabilities)
-- [Demo Protections](#demo-protections)
-- [How It Works](#how-it-works)
-- [Technology Stack](#technology-stack)
-- [Supported Contract Topics](#supported-contract-topics)
-- [Quick Start](#quick-start)
-- [Application Surfaces](#application-surfaces)
-- [Evaluation](#evaluation)
-- [CI/CD](#cicd)
-- [Deployment](#public-deployment)
-- [Project Structure](#project-structure)
-
 ## Verified Results
 
 The final configuration was evaluated on 463 clause records from 30 CUAD
@@ -108,6 +109,10 @@ Measured over 120 sequential requests using GPT-4.1 mini Standard:
 | P50 response latency | **1.69 s** |
 | P95 response latency | **2.43 s** |
 | P95 first-token latency | **1.22 s** |
+
+These answer-quality metrics are deterministic route, citation, abstention,
+required-concept, and forbidden-overclaim checks over 12 curated scenarios. They
+are not a broad semantic or legal-correctness score.
 
 The system meets the practical P95 target of 2.5 seconds. It does not yet meet
 the experimental targets of P95 below 2.0 seconds or first-token latency below
@@ -232,7 +237,7 @@ Returned evidence: top 3 passages in the React chat UI
 
 | Layer | Technology |
 | --- | --- |
-| Dataset | CUAD |
+| Dataset | [CUAD](https://huggingface.co/datasets/theatticusproject/cuad) |
 | Embeddings | BAAI/bge-small-en-v1.5 |
 | Vector database | Qdrant |
 | Lexical retrieval | In-memory BM25 |
@@ -259,6 +264,8 @@ Questions outside these categories are rejected safely instead of being
 answered using unrelated evidence.
 
 ## Dataset Snapshot
+
+Original dataset source: [theatticusproject/cuad on Hugging Face](https://huggingface.co/datasets/theatticusproject/cuad).
 
 The current evaluated subset contains:
 
@@ -539,6 +546,29 @@ python evaluation\answer_eval.py --judge
 The model judge incurs API usage and is intentionally excluded from normal
 unit tests.
 
+### Ragas Semantic Evaluation
+
+[Ragas](https://docs.ragas.io/en/stable/) is available as a complementary
+hosted-judge benchmark for release validation. It reuses the 12 curated answer
+scenarios, collects the generated answer and retrieved contexts, and scores
+faithfulness, answer relevancy, context precision, and context recall using the
+[Ragas evaluation workflow](https://docs.ragas.io/en/stable/getstarted/evals/):
+
+```powershell
+$env:RAGAS_JUDGE_MODEL="gpt-4.1-mini-2025-04-14"
+python evaluation\ragas_eval.py `
+  --qdrant-mode server `
+  --qdrant-url http://localhost:6333 `
+  --rerank-mode auto `
+  --output data\processed\ragas_eval_results.json `
+  --enforce-gates
+```
+
+Initial release-quality gates are mean faithfulness >= 0.90, mean answer
+relevancy >= 0.80, mean context precision >= 0.80, mean context recall >= 0.80,
+and no critical case below 0.75 faithfulness. Ragas is not a PR gate because it
+uses hosted judge calls and can vary with external model behavior.
+
 ### End-to-End Performance
 
 ```powershell
@@ -571,10 +601,11 @@ QFind uses GitHub Actions with manual deployment gates:
   Python dependencies, runs `pytest` and `ruff`, checks and builds the React
   frontend, builds the Cloud Run Docker image, runs warning-only dependency
   audits, and fails only on critical container vulnerabilities.
-- `RAG Quality` runs manually, weekly, and on RAG-related pull request paths. It
-  starts Qdrant, prepares the CUAD subset, indexes the collection, runs
-  retrieval evaluation, runs offline deterministic answer checks, and uploads
-  JSON reports as artifacts.
+- `RAG Quality` runs manually and weekly. It starts Qdrant, prepares the CUAD
+  subset, indexes the collection, runs retrieval evaluation, runs offline
+  deterministic answer checks, optionally runs Ragas release-quality gates when
+  `OPENAI_API_KEY` is available, and uploads JSON reports as artifacts. It is
+  intentionally not a pull-request gate.
 - `Deploy to Cloud Run` is manual only. It first checks that `CI` passed for the
   selected commit, then builds and pushes the image to Artifact Registry,
   deploys Cloud Run with cost controls, and smoke-tests `/health` plus the root

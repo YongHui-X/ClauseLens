@@ -196,10 +196,15 @@ Acceptance checks:
 - Follow-ups are contextualized deterministically without an extra LLM call.
 - Offline labeled evaluation is the source of retrieval accuracy. Live user
   telemetry is operational data, not ground-truth accuracy.
+- Ragas is a complementary hosted-judge release benchmark for faithfulness,
+  answer relevancy, context precision, and context recall. It is manual or
+  scheduled only, not a default pull-request gate, because it spends judge-model
+  credits and can vary with external model behavior.
 
 ## Current Backlog
 
-1. Add answer faithfulness and citation-correctness benchmarks.
+1. Expand Ragas and deterministic answer cases with harder negative,
+   adversarial, and out-of-scope scenarios.
 2. Collect at least 100 representative chat turns for stable P50/P95/P99
    reporting.
 3. Add full-contract chunks with character spans and eventual PDF page

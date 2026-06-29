@@ -4,15 +4,6 @@ on:
   workflow_dispatch:
   schedule:
     - cron: "0 18 * * 0"
-  pull_request:
-    paths:
-      - "app/**"
-      - "scripts/**"
-      - "evaluation/**"
-      - "tests/**"
-      - "data/processed/**"
-      - "requirements.txt"
-      - "pyproject.toml"
 
 permissions:
   contents: read
@@ -36,6 +27,7 @@ jobs:
       MODEL_WARMUP_ENABLED: "false"
       RERANKING_ENABLED: "false"
       OPENAI_MODEL: gpt-4.1-mini-2025-04-14
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
 
     steps:
       - uses: actions/checkout@v4
@@ -91,6 +83,18 @@ jobs:
             --rerank-mode off \
             --output data/processed/answer_eval_ci.json
 
+      - name: Run Ragas release-quality evaluation
+        if: env.OPENAI_API_KEY != ''
+        env:
+          RAGAS_JUDGE_MODEL: gpt-4.1-mini-2025-04-14
+        run: |
+          python evaluation/ragas_eval.py \
+            --qdrant-mode server \
+            --qdrant-url http://localhost:6333 \
+            --rerank-mode off \
+            --output data/processed/ragas_eval_results.json \
+            --enforce-gates
+
       - name: Upload RAG quality reports
         uses: actions/upload-artifact@v4
         if: always()
@@ -99,5 +103,6 @@ jobs:
           path: |
             data/processed/eval_ci.json
             data/processed/answer_eval_ci.json
+            data/processed/ragas_eval_results.json
             data/processed/starter_summary.json
           if-no-files-found: warn
