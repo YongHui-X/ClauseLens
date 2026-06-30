@@ -16,7 +16,7 @@ The latency calculations use the response metadata stored with those saved
 chats. Older telemetry from previous application versions was excluded.
 
 This is a small manual sample. Its percentile values describe this sample only
-and are not stable service-level measurements.
+and are not stable service-level measurements..
 
 ## Performance
 
