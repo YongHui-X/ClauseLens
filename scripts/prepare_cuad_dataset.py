@@ -5,7 +5,6 @@ import csv
 import json
 from pathlib import Path
 
-
 DEFAULT_CUAD_ROOT = Path("data/cuad/CUAD_v1")
 
 
