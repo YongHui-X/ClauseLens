@@ -51,7 +51,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: data/cuad/CUAD_v1
-          key: cuad-v1-json-text-v2-c38f490a984420b8a62600db401fafd5
+          key: cuad-v1-json-text-v3-c38f490a984420b8a62600db401fafd5
 
       - name: Download CUAD v1
         if: steps.cache-cuad.outputs.cache-hit != 'true'
@@ -68,67 +68,10 @@ jobs:
           target = Path("data/cuad")
           with ZipFile("/tmp/CUAD_v1.zip") as archive:
               archive.extractall(target)
-
-          dataset_root = target / "CUAD_v1"
-          text_root = dataset_root / "full_contract_txt"
-          if not text_root.exists():
-              import csv
-              import json
-
-              with (dataset_root / "master_clauses.csv").open(
-                  "r", encoding="utf-8-sig", newline=""
-              ) as file:
-                  csv_stems = {
-                      Path(row["Filename"]).stem.strip()
-                      for row in csv.DictReader(file)
-                  }
-
-              documents = json.loads(
-                  (dataset_root / "CUAD_v1.json").read_text(encoding="utf-8")
-              )["data"]
-
-              part_i = text_root / "Part_I"
-              part_ii = text_root / "Part_II"
-              part_i.mkdir(parents=True, exist_ok=True)
-              part_ii.mkdir(parents=True, exist_ok=True)
-
-              written = 0
-              for document in documents:
-                  stem = document["title"].strip()
-                  if stem not in csv_stems:
-                      continue
-                  contexts = [
-                      paragraph.get("context", "")
-                      for paragraph in document.get("paragraphs", [])
-                      if paragraph.get("context")
-                  ]
-                  if contexts:
-                      (part_i / f"{stem}.txt").write_text(
-                          "\n\n".join(contexts),
-                          encoding="utf-8",
-                      )
-                      written += 1
-              print(f"Generated {written} CUAD text files from CUAD_v1.json.")
-
-          required_paths = [
-              target / "CUAD_v1" / "master_clauses.csv",
-              target / "CUAD_v1" / "full_contract_txt" / "Part_I",
-              target / "CUAD_v1" / "full_contract_txt" / "Part_II",
-          ]
-          missing = [str(path) for path in required_paths if not path.exists()]
-          if missing:
-              extracted = sorted(
-                  str(path.relative_to(target))
-                  for path in (target / "CUAD_v1").rglob("*")
-                  if path.is_dir() or path.name == "master_clauses.csv"
-              )
-              raise SystemExit(
-                  "CUAD extraction missing required paths: "
-                  f"{missing}. Extracted paths: {extracted[:40]}"
-              )
-
-          print("CUAD v1 extracted and validated.")
           PY
+
+      - name: Prepare CUAD dataset layout
+        run: python scripts/prepare_cuad_dataset.py
 
       - name: Wait for Qdrant
         run: |
