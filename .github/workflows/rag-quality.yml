@@ -124,10 +124,14 @@ jobs:
           fi
 
       - name: Run Ragas release-quality evaluation
-        if: env.OPENAI_API_KEY != '' && github.event.inputs.run_ragas == 'true'
+        if: github.event.inputs.run_ragas == 'true'
         env:
           RAGAS_JUDGE_MODEL: gpt-4.1-mini-2025-04-14
         run: |
+          if [ -z "$OPENAI_API_KEY" ]; then
+            echo "OPENAI_API_KEY is not configured; cannot run Ragas evaluation." >&2
+            exit 1
+          fi
           python evaluation/ragas_eval.py \
             --qdrant-mode server \
             --qdrant-url http://localhost:6333 \
