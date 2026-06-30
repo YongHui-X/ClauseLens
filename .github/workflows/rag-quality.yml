@@ -2,6 +2,24 @@ name: RAG Quality
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/rag-quality.yml"
+      - "app/**"
+      - "evaluation/**"
+      - "scripts/**"
+      - "requirements.txt"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/rag-quality.yml"
+      - "app/**"
+      - "evaluation/**"
+      - "scripts/**"
+      - "requirements.txt"
   schedule:
     - cron: "0 18 * * 0"
 
@@ -104,7 +122,7 @@ jobs:
             --output data/processed/answer_eval_ci.json
 
       - name: Run Ragas release-quality evaluation
-        if: env.OPENAI_API_KEY != ''
+        if: env.OPENAI_API_KEY != '' && (github.event_name == 'workflow_dispatch' || github.event_name == 'schedule')
         env:
           RAGAS_JUDGE_MODEL: gpt-4.1-mini-2025-04-14
         run: |
