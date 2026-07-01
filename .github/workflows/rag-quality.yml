@@ -23,7 +23,7 @@ jobs:
 
     services:
       qdrant:
-        image: qdrant/qdrant:v1.14.1
+        image: qdrant/qdrant:v1.18.0
         ports:
           - 6333:6333
 
@@ -117,11 +117,106 @@ jobs:
             --rerank-mode off \
             --output data/processed/answer_eval_ci.json
 
+      - name: Upload RAG quality reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rag-quality-reports
+          path: |
+            data/processed/eval_ci.json
+            data/processed/answer_eval_ci.json
+            data/processed/ragas_eval_results.json
+            data/processed/starter_summary.json
+          if-no-files-found: warn
+
+  ragas-release-quality:
+    name: Paid Ragas release-quality gate
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_ragas }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    services:
+      qdrant:
+        image: qdrant/qdrant:v1.18.0
+        ports:
+          - 6333:6333
+
+    env:
+      QDRANT_MODE: server
+      QDRANT_URL: http://localhost:6333
+      QDRANT_LOCAL_URL: http://localhost:6333
+      MODEL_WARMUP_ENABLED: "false"
+      RERANKING_ENABLED: "false"
+      OPENAI_MODEL: gpt-4.1-mini-2025-04-14
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      RAGAS_JUDGE_MODEL: gpt-4.1-mini-2025-04-14
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Cache CUAD v1
+        id: cache-cuad
+        uses: actions/cache@v4
+        with:
+          path: data/cuad/CUAD_v1
+          key: cuad-v1-json-text-v3-c38f490a984420b8a62600db401fafd5
+
+      - name: Download CUAD v1
+        if: steps.cache-cuad.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p data/cuad
+          curl -L --fail --retry 5 --retry-delay 10 \
+            -o /tmp/CUAD_v1.zip \
+            "https://zenodo.org/api/records/4595826/files/CUAD_v1.zip/content"
+          echo "c38f490a984420b8a62600db401fafd5  /tmp/CUAD_v1.zip" | md5sum -c -
+          python - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile
+
+          target = Path("data/cuad")
+          with ZipFile("/tmp/CUAD_v1.zip") as archive:
+              archive.extractall(target)
+          PY
+
+      - name: Prepare CUAD dataset layout
+        run: python scripts/prepare_cuad_dataset.py
+
+      - name: Wait for Qdrant
+        run: |
+          python - <<'PY'
+          import time
+          import urllib.request
+
+          for _ in range(30):
+              try:
+                  with urllib.request.urlopen("http://localhost:6333/", timeout=2) as response:
+                      if response.status == 200:
+                          raise SystemExit(0)
+              except Exception:
+                  time.sleep(2)
+          raise SystemExit("Qdrant did not become ready")
+          PY
+
+      - name: Prepare CUAD starter subset
+        run: python scripts/prepare_cuad_subset.py
+
+      - name: Index Qdrant collection
+        run: python scripts/index_qdrant.py --recreate
+
       - name: Show Ragas gate inputs
         run: |
           echo "event: ${{ github.event_name }}"
-          echo "run_ragas input: ${{ github.event.inputs.run_ragas }}"
-          echo "ragas enabled: ${{ github.event_name == 'push' || github.event.inputs.run_ragas == 'true' }}"
+          echo "run_ragas input: ${{ inputs.run_ragas }}"
           if [ -n "$OPENAI_API_KEY" ]; then
             echo "OPENAI_API_KEY configured: true"
           else
@@ -129,9 +224,6 @@ jobs:
           fi
 
       - name: Run Ragas release-quality evaluation
-        if: ${{ github.event_name == 'push' || github.event.inputs.run_ragas == 'true' }}
-        env:
-          RAGAS_JUDGE_MODEL: gpt-4.1-mini-2025-04-14
         run: |
           if [ -z "$OPENAI_API_KEY" ]; then
             echo "OPENAI_API_KEY is not configured; cannot run Ragas evaluation." >&2
@@ -144,14 +236,12 @@ jobs:
             --output data/processed/ragas_eval_results.json \
             --enforce-gates
 
-      - name: Upload RAG quality reports
+      - name: Upload Ragas report
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: rag-quality-reports
+          name: ragas-release-quality-report
           path: |
-            data/processed/eval_ci.json
-            data/processed/answer_eval_ci.json
             data/processed/ragas_eval_results.json
             data/processed/starter_summary.json
           if-no-files-found: warn
