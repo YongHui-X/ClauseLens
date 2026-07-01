@@ -1,5 +1,6 @@
 import json
 import sys
+import types
 from pathlib import Path
 
 from evaluation.ragas_cases import load_ragas_cases
@@ -7,6 +8,7 @@ from evaluation.ragas_eval import (
     RagasCollectedCase,
     install_ragas_vertexai_import_shim,
     ragas_dataset_rows,
+    run_ragas_scores,
     summarize_results,
 )
 
@@ -97,3 +99,62 @@ def test_install_ragas_vertexai_import_shim_provides_legacy_module(monkeypatch) 
 
     module = sys.modules[module_name]
     assert hasattr(module, "ChatVertexAI")
+
+
+def test_run_ragas_scores_passes_openai_client_to_llm_factory(monkeypatch) -> None:
+    captured = {}
+
+    class EvaluationDataset:
+        @classmethod
+        def from_list(cls, rows):
+            captured["dataset_rows"] = rows
+            return "dataset"
+
+    class Result:
+        scores = [{"faithfulness": 1.0}]
+
+    def evaluate(**kwargs):
+        captured["evaluate"] = kwargs
+        return Result()
+
+    def llm_factory(model, *, client):
+        captured["model"] = model
+        captured["client"] = client
+        return "llm"
+
+    class Metric:
+        pass
+
+    ragas_module = types.ModuleType("ragas")
+    ragas_module.EvaluationDataset = EvaluationDataset
+    ragas_module.evaluate = evaluate
+
+    ragas_llms_module = types.ModuleType("ragas.llms")
+    ragas_llms_module.llm_factory = llm_factory
+
+    ragas_metrics_module = types.ModuleType("ragas.metrics")
+    ragas_metrics_module.Faithfulness = Metric
+    ragas_metrics_module.LLMContextPrecisionWithReference = Metric
+    ragas_metrics_module.LLMContextRecall = Metric
+    ragas_metrics_module.ResponseRelevancy = Metric
+
+    class OpenAI:
+        pass
+
+    openai_module = types.ModuleType("openai")
+    openai_module.OpenAI = OpenAI
+
+    monkeypatch.setitem(sys.modules, "ragas", ragas_module)
+    monkeypatch.setitem(sys.modules, "ragas.llms", ragas_llms_module)
+    monkeypatch.setitem(sys.modules, "ragas.metrics", ragas_metrics_module)
+    monkeypatch.setitem(sys.modules, "openai", openai_module)
+
+    scores = run_ragas_scores(
+        [{"user_input": "Question?", "response": "Answer."}],
+        judge_model="judge-model",
+    )
+
+    assert scores == [{"faithfulness": 1.0}]
+    assert captured["model"] == "judge-model"
+    assert isinstance(captured["client"], OpenAI)
+    assert captured["evaluate"]["llm"] == "llm"

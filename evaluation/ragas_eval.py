@@ -227,6 +227,7 @@ def run_ragas_scores(
 
     try:
         install_ragas_vertexai_import_shim()
+        from openai import OpenAI
         from ragas import EvaluationDataset, evaluate
         from ragas.llms import llm_factory
         from ragas.metrics import (
@@ -245,7 +246,7 @@ def run_ragas_scores(
         ) from exc
 
     dataset = EvaluationDataset.from_list(dataset_rows)
-    llm = llm_factory(judge_model)
+    llm = llm_factory(judge_model, client=OpenAI())
     result = evaluate(
         dataset=dataset,
         metrics=[
