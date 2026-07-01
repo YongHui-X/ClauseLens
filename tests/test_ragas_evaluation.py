@@ -122,6 +122,11 @@ def test_run_ragas_scores_passes_openai_client_to_llm_factory(monkeypatch) -> No
         captured["client"] = client
         return "llm"
 
+    def embedding_factory(provider, *, interface):
+        captured["embedding_provider"] = provider
+        captured["embedding_interface"] = interface
+        return "embeddings"
+
     class Metric:
         pass
 
@@ -131,6 +136,9 @@ def test_run_ragas_scores_passes_openai_client_to_llm_factory(monkeypatch) -> No
 
     ragas_llms_module = types.ModuleType("ragas.llms")
     ragas_llms_module.llm_factory = llm_factory
+
+    ragas_embeddings_module = types.ModuleType("ragas.embeddings")
+    ragas_embeddings_module.embedding_factory = embedding_factory
 
     ragas_metrics_module = types.ModuleType("ragas.metrics")
     ragas_metrics_module.Faithfulness = Metric
@@ -146,6 +154,7 @@ def test_run_ragas_scores_passes_openai_client_to_llm_factory(monkeypatch) -> No
 
     monkeypatch.setitem(sys.modules, "ragas", ragas_module)
     monkeypatch.setitem(sys.modules, "ragas.llms", ragas_llms_module)
+    monkeypatch.setitem(sys.modules, "ragas.embeddings", ragas_embeddings_module)
     monkeypatch.setitem(sys.modules, "ragas.metrics", ragas_metrics_module)
     monkeypatch.setitem(sys.modules, "openai", openai_module)
 
@@ -158,3 +167,6 @@ def test_run_ragas_scores_passes_openai_client_to_llm_factory(monkeypatch) -> No
     assert captured["model"] == "judge-model"
     assert isinstance(captured["client"], OpenAI)
     assert captured["evaluate"]["llm"] == "llm"
+    assert captured["embedding_provider"] == "text-embedding-3-small"
+    assert captured["embedding_interface"] == "legacy"
+    assert captured["evaluate"]["embeddings"] == "embeddings"

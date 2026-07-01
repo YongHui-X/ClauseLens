@@ -229,6 +229,7 @@ def run_ragas_scores(
         install_ragas_vertexai_import_shim()
         from openai import OpenAI
         from ragas import EvaluationDataset, evaluate
+        from ragas.embeddings import embedding_factory
         from ragas.llms import llm_factory
         from ragas.metrics import (
             Faithfulness,
@@ -247,6 +248,10 @@ def run_ragas_scores(
 
     dataset = EvaluationDataset.from_list(dataset_rows)
     llm = llm_factory(judge_model, client=OpenAI())
+    embeddings = embedding_factory(
+        "text-embedding-3-small",
+        interface="legacy",
+    )
     result = evaluate(
         dataset=dataset,
         metrics=[
@@ -256,6 +261,7 @@ def run_ragas_scores(
             LLMContextRecall(),
         ],
         llm=llm,
+        embeddings=embeddings,
         raise_exceptions=True,
     )
     if hasattr(result, "to_pandas"):
